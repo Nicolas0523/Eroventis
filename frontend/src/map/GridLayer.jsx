@@ -16,13 +16,8 @@ export default function GridLayer({ gridData }) {
 
     return {
       fillColor: color,
-      fillOpacity: 0.7,
-
-      color: color,
-      weight: 0.15,
-      opacity: 0.15,
-
-      smoothFactor: 1,
+      fillOpacity: 0.75,
+      stroke: false
     };
   };
 
