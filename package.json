@@ -3,5 +3,12 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   }
 }
