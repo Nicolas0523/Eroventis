@@ -15,7 +15,7 @@ def gee_retry(func, max_retries=3):
                 raise
 
 def resolve_dates(start_date_str: str, end_date_str: str):
-    # Дефолтные даты на случай ошибок
+    
     default_start = datetime(2024, 1, 1)
     default_end = datetime(2024, 12, 31)
 
@@ -40,7 +40,7 @@ def resolve_dates(start_date_str: str, end_date_str: str):
     if start_date > end_date:
         start_date, end_date = end_date, start_date
 
-    # Переводим обратно в строковый формат для GEE фильтров
+
     actual_start = start_date.strftime("%Y-%m-%d")
     actual_end = end_date.strftime("%Y-%m-%d")
     is_forecast = False 

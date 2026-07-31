@@ -11,29 +11,29 @@ import xgboost as xgb
 import warnings
 warnings.filterwarnings('ignore')
 
-# 1. ЗАГРУЗКА И ОБЪЕДИНЕНИЕ ВСЕЙ ИСТОРИИ (2018-2025) ДЛЯ КОММЕРЧЕСКОГО СТАРТАПА
+
 df1 = pd.read_csv(r"C:\Users\User\Desktop\проекты\windguard_2.0\WindGuard_REAL_TRAIN_2018_2023.csv")
 df2 = pd.read_csv(r"C:\Users\User\Desktop\проекты\windguard_2.0\WindGuard_REAL_TEST_2024_2025.csv")
 
-# Соединяем все данные в один пул
+
 df_full = pd.concat([df1, df2]).reset_index(drop=True)
 df_full = df_full.dropna(subset=['erosion_risk']).reset_index(drop=True)
 
-# СЛУЧАЙНЫЙ СПЛИТ ПО ВСЕЙ ИСТОРИИ (80% на обучение, 20% на коммерческий тест)
+
 train, test = train_test_split(df_full, test_size=0.2, random_state=42)
 print(f"Коммерческий Train: {train.shape}, Коммерческий Test: {test.shape}")
 
-# 2. СТАНДАРТИЗАЦИЯ ТАРГЕТА (БЕЗ DATA LEAKAGE)
+
 target_scaler = StandardScaler()
 y_train = target_scaler.fit_transform(train[['erosion_risk']]).flatten()
 y_test = target_scaler.transform(test[['erosion_risk']]).flatten()
 
-# 3. FEATURE ENGINEERING
+
 for dataset in [train, test]:
     dataset["aridity_index"] = dataset["rain"] / (dataset["evaporation"].abs() + 1e-9)
     dataset["is_dry_season"] = dataset["month"].isin([6, 7, 8, 9]).astype(int)
 
-# Расчет аномалий
+
 monthly_mean = train.groupby("month")["NDVI_now"].mean()
 monthly_std = train.groupby("month")["NDVI_now"].std()
 train["ndvi_zscore"] = (train["NDVI_now"] - train["month"].map(monthly_mean)) / (train["month"].map(monthly_std) + 1e-9)
@@ -44,10 +44,9 @@ global_mean = train["NDVI_now"].mean()
 train["ndvi_biome_anomaly"] = train.apply(lambda row: row["NDVI_now"] - biome_mean.loc[(row["biome"], row["month"])], axis=1)
 test["ndvi_biome_anomaly"] = test.apply(lambda row: row["NDVI_now"] - biome_mean.get((row["biome"], row["month"]), global_mean), axis=1)
 
-# 1. Возвращаем month в список фич для коммерческого буста точности
 features = [
     "NDVI_now", "NDVI_anomaly", "wind_mean", "wind_max", "rain", "tempC", 
-    "soil_moisture", "evaporation", "slope", "soil_type", "biome", "month", # <-- month вернулся
+    "soil_moisture", "evaporation", "slope", "soil_type", "biome", "month", 
     "latitude", "longitude", "aridity_index", "is_dry_season", 
     "ndvi_zscore", "ndvi_biome_anomaly"
 ]
@@ -59,15 +58,14 @@ scaler = StandardScaler()
 X_train_sc = scaler.fit_transform(X_train)
 X_test_sc = scaler.transform(X_test)
 
-# 2. АГРЕССИВНЫЕ НАСТРОЙКИ XGBOOST ДЛЯ СТАРТАПА (УБРАНЫ ТОРМОЗА)
 model = XGBRegressor(
-    n_estimators=1000,         # Больше деревьев для высокой точности
-    max_depth=10,              # Глубокие деревья ловят сложные локальные бури
+    n_estimators=1000,         
+    max_depth=10,              
     learning_rate=0.03,       
     subsample=0.8,             
     colsample_bytree=0.8,      
-    reg_alpha=0.0,             # ОТКЛЮЧИЛИ ШТРАФЫ (было 10.0)
-    reg_lambda=1.0,            # Сбросили до дефолта (было 15.0)
+    reg_alpha=0.0,             
+    reg_lambda=1.0,            
     eval_metric="mae",
     random_state=42,
     n_jobs=-1
@@ -78,22 +76,16 @@ model.fit(X_train_sc, y_train)
 print("Done!")
 
 
-# Получаем сырые предсказания алгоритма
 raw_preds = model.predict(X_test_sc)
 
-# =========================================================================
-# КАЛИБРОВКА СДВИГА КЛИМАТИЧЕСКИХ ЭПОХ (БОРЬБА С BIAS SHIFT)
-# =========================================================================
 bias_shift = np.mean(y_test) - np.mean(raw_preds)
 preds = raw_preds + bias_shift 
-# =========================================================================
 
 print("\n=== Честные Общие Метрики после Калибровки Смещения ===")
 print(f"MAE: {mean_absolute_error(y_test, preds):.4f}")
 print(f"MSE: {mean_squared_error(y_test, preds):.4f}")
 print(f"Честный R²: {r2_score(y_test, preds):.4f}")
 
-# 5. СТРОИМ СТАТИСТИЧЕСКИЕ ГРАФИКИ ВЫПУСКА
 fig, axes = plt.subplots(1, 3, figsize=(16, 5))
 
 plot_size = min(2000, len(y_test))
@@ -117,7 +109,7 @@ plt.tight_layout()
 plt.savefig(r"C:\Users\User\Desktop\проекты\windguard_2.0\model_v5_results.png", dpi=150)
 plt.show()
 
-# 6. СОХРАНЕНИЕ СТАРТАП-АРТЕФАКТОВ
+
 ndvi_stats = train.groupby('month')['NDVI_now'].agg(['mean','std']).to_dict()
 ndvi_biome_stats = train.groupby(['biome','month'])['NDVI_now'].mean().to_dict()
 joblib.dump(ndvi_stats, r"C:\Users\User\Desktop\проекты\windguard_2.0\ndvi_stats.pkl")
@@ -129,24 +121,21 @@ joblib.dump(features, r"C:\Users\User\Desktop\проекты\windguard_2.0\featu
 joblib.dump(bias_shift, r"C:\Users\User\Desktop\проекты\windguard_2.0\bias_shift.pkl")
 print("\nВсе артефакты модели v5 сохранены для FastAPI производства.")
 
-# =========================================================================
-# 7. НЕУЯЗВИМЫЙ SHAP АНАЛИЗ ЧЕРЕЗ РОДНЫЙ МЕТОД XGBOOST (100% ЗАЩИТА ОТ JSON-БАГОВ)
-# =========================================================================
+
 print("\nRunning SHAP Analysis...")
 booster = model.get_booster()
 
-# Ограничиваем сэмпл для SHAP, чтобы расчет прошел за пару секунд
+
 X_test_sample = X_test_sc[:300]
 dtest_shap = xgb.DMatrix(X_test_sample, feature_names=features)
 
-# Извлекаем вклады напрямую через движок C++ XGBoost
+
 shap_contribs = booster.predict(dtest_shap, pred_contribs=True)
 
-# Отсекаем последний столбец (базовое смещение base_value)
+
 shap_values_matrix = shap_contribs[:, :-1]
 
 plt.figure(figsize=(11, 7))
-# Отрисовываем распределение влияния признаков по SHAP
 shap.summary_plot(shap_values_matrix, X_test.iloc[:300], feature_names=features, show=False)
 plt.title("SHAP Global Feature Impact on Wind Erosion in Kazakhstan", fontsize=14)
 plt.tight_layout()

@@ -11,7 +11,7 @@ SCRIPT_DIR        = Path(__file__).resolve().parent
 ndvi_stats        = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
 ndvi_biome_stats  = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
 
-# ОЧИЩЕННЫЙ СПИСОК ФИЧ v5 СТРОГО ИЗ 17 ЭЛЕМЕНТОВ (В соответствии с features_v5.pkl)
+
 FEATURE_COLUMNS = [
     'NDVI_now', 'wind_mean', 'wind_max', 'rain', 'tempC', 
     'soil_moisture', 'evaporation', 'slope', 'soil_type', 'biome', 
@@ -170,9 +170,8 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
             "lat": latitude,
             "lon": longitude,
             "step_deg": resolution_km / 111.0,
-            # Сохраняем чистые физические значения ПОД ТЕМИ ЖЕ КЛЮЧАМИ для prediction_grid эндпоинта!
             "raw_ndvi": props.get("NDVI_now", 0),
-            "raw_wind": props.get("wind_max", 0), # Используем wind_max для фронтенда
+            "raw_wind": props.get("wind_max", 0), 
             "raw_temp": props.get("tempC", 0)
         })
 
