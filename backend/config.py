@@ -9,15 +9,19 @@ load_dotenv()
 SCRIPT_DIR  = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-SCALER_PATH   = PROJECT_ROOT / "scaler_v3.pkl"
-MODEL_PATH    = PROJECT_ROOT / "xgb_model_v3.pkl"
-FEATURES_PATH = PROJECT_ROOT / "features_v3.pkl"
+SCALER_PATH   = PROJECT_ROOT / "scaler_v5.pkl"
+MODEL_PATH    = PROJECT_ROOT / "xgb_model_v5.pkl"
+FEATURES_PATH = PROJECT_ROOT / "features_v5.pkl"
+TARGET_SCALER_PATH = PROJECT_ROOT / "target_scaler_v5.pkl"
+BIAS_SHIFT_PATH    = PROJECT_ROOT / "bias_shift.pkl"
 
 
 ndvi_stats = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
 scaler   = joblib.load(SCALER_PATH)
 ml_model = joblib.load(MODEL_PATH)
 features = joblib.load(FEATURES_PATH)
+target_scaler = joblib.load(TARGET_SCALER_PATH)
+bias_shift    = joblib.load(BIAS_SHIFT_PATH)
 
 # GEE инициализация
 GEE_INITIALIZED = False

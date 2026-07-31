@@ -1,71 +1,100 @@
 from extract_features import extract_features, extract_features_grid, extract_future_features_grid
 from data_loader import load_raw_data, load_raw_data_multi_year
-from config import ml_model
+from config import ml_model, features, target_scaler, bias_shift
 from datetime import datetime
 
 
 def prediction_val(polygon, start_date, end_date):
-
     raw_data = load_raw_data_multi_year(
-        polygon,
-        start_date,
+        polygon, 
+        start_date, 
         end_date
     )
 
     month = datetime.strptime(
-        start_date,
+        start_date, 
         "%Y-%m-%d"
     ).month
 
     scaled_features, _ = extract_features(
-        raw_data,
-        polygon,
+        raw_data, 
+        polygon, 
         month
     )
 
-    result = ml_model.predict(scaled_features)[0]
+    raw_result = ml_model.predict(scaled_features) 
 
-    return float(result)
+    calibrated_result = raw_result + bias_shift
+    real_aerosol_risk = target_scaler.inverse_transform(calibrated_result.reshape(-1, 1))
+
+    final_score = float(real_aerosol_risk[0][0])
+
+    return round(final_score, 4)
 
 
 def prediction_grid(polygon, start_date, end_date, resolution_km=10):
-    raw_data = load_raw_data_multi_year(polygon, start_date, end_date)
-    month = datetime.strptime(start_date, "%Y-%m-%d").month
+    raw_data = load_raw_data_multi_year(
+        polygon, 
+        start_date, 
+        end_date
+    )
 
-    scaled, coords_meta = extract_features_grid(raw_data, polygon, month, resolution_km)
+    month = datetime.strptime(
+        start_date, 
+        "%Y-%m-%d"
+    ).month
+
+    scaled, coords_meta = extract_features_grid(
+        raw_data, 
+        polygon, 
+        month, 
+        resolution_km
+    )
 
     if len(scaled) == 0: return []
 
-    preds = ml_model.predict(scaled)
+    raw_preds = ml_model.predict(scaled)
+
+    calibrated_preds = raw_preds + bias_shift
+    real_preds = target_scaler.inverse_transform(calibrated_preds.reshape(-1, 1)).flatten()
 
     grid_results = []
-    for i, (cell, risk) in enumerate(zip(coords_meta, preds)):
+    for i, (cell, risk) in enumerate(zip(coords_meta, real_preds)):
         grid_results.append({
             "lat": cell["lat"],
             "lon": cell["lon"],
-            "risk": float(risk),
-            "ndvi": float(scaled[i][0]), 
-            "wind": float(scaled[i][1]),
-            "temp": float(scaled[i][2]),
+            "risk": float(risk), 
+            "ndvi": float(cell["raw_ndvi"]), 
+            "wind": float(cell["raw_wind"]),
+            "temp": float(cell["raw_temp"]), 
         })
 
     return grid_results
 
 
 def prediction_future_grid(polygon, month, resolution_km=10):
-    raw_data = load_raw_data_multi_year(polygon, "2025-06-01", "2025-08-31") 
+    raw_data = load_raw_data_multi_year(
+        polygon, 
+        "2025-06-01", 
+        "2025-08-31"
+    ) 
 
     scaled, coords_meta = extract_future_features_grid(
-        raw_data, polygon, month, resolution_km=resolution_km
+        raw_data, 
+        polygon, 
+        month, 
+        resolution_km=resolution_km
     )
 
-    if len(scaled) == 0:
-        return []
+    if len(scaled) == 0: return []
 
-    preds = ml_model.predict(scaled)
+    raw_preds = ml_model.predict(scaled)
+
+    calibrated_preds = raw_preds + bias_shift
+    real_preds = target_scaler.inverse_transform(calibrated_preds.reshape(-1, 1)).flatten()
 
     grid_results = []
-    for cell, risk in zip(coords_meta, preds):
+    for cell, risk in zip(coords_meta, real_preds):
         grid_results.append({
             "i": cell.get('i', 0),
             "j": cell.get('j', 0),
@@ -77,14 +106,8 @@ def prediction_future_grid(polygon, month, resolution_km=10):
 
     return grid_results
 
+
 def get_feature_importance():
-    features = [
-        "NDVI_now", "wind_mean", "wind_max", "wind_erosivity", "rain", "tempC", 
-        "soil_moisture", "evaporation", "slope", "soil_type", "biome", "month", 
-        "latitude", "longitude", "ndvi_wind_interaction", "aridity_index", 
-        "is_dry_season", "ndvi_zscore", "ndvi_biome_anomaly"
-    ]
-    
     importances = ml_model.feature_importances_
     
     feature_data = [
