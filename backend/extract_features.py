@@ -13,11 +13,12 @@ ndvi_biome_stats  = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
 
 
 FEATURE_COLUMNS = [
-    'NDVI_now', 'wind_mean', 'wind_max', 'rain', 'tempC', 
+    'NDVI_now', 'NDVI_anomaly', 'wind_mean', 'wind_max', 'rain', 'tempC', 
     'soil_moisture', 'evaporation', 'slope', 'soil_type', 'biome', 
     'month', 'latitude', 'longitude', 'aridity_index', 'is_dry_season',
     'ndvi_zscore', 'ndvi_biome_anomaly'
 ]
+
 
 def _compute_features(ndvi_value, wind_mean_value, wind_max_value,
                        rain_value, tempC_value, moisture_value,
@@ -28,9 +29,10 @@ def _compute_features(ndvi_value, wind_mean_value, wind_max_value,
     ndvi_mean = ndvi_stats['mean'].get(month_key, 0.0)
     ndvi_std  = ndvi_stats['std'].get(month_key, 1.0)
 
-    # Чистые физические фичи (УБРАНЫ wind_erosivity и ndvi_wind_interaction)
+    ndvi_anomaly_value = float(ndvi_value or 0) - ndvi_mean
+
     aridity_index         = float(rain_value or 0) / (abs(float(evaporation_value or 0)) + 1e-9)
-    is_dry_season         = 1 if month in [6, 7, 8, 9] else 0 # Скорректирован засушливый сезон РК
+    is_dry_season         = 1 if month in [6, 7, 8, 9] else 0 
     ndvi_zscore           = (float(ndvi_value or 0) - ndvi_mean) / (ndvi_std + 1e-9)
 
     biome_key          = (int(biome_value), month_key) if biome_value else None
@@ -38,10 +40,9 @@ def _compute_features(ndvi_value, wind_mean_value, wind_max_value,
     ndvi_biome_anomaly = float(ndvi_value or 0) - biome_mean
 
     return [
-        ndvi_value, wind_mean_value, wind_max_value,
-        rain_value, tempC_value, moisture_value, 
-        evaporation_value, slope_value, soil_type_value, 
-        biome_value, int(month), latitude, longitude, 
+        ndvi_value, ndvi_anomaly_value, wind_mean_value, wind_max_value,
+        rain_value, tempC_value, moisture_value, evaporation_value, slope_value,
+        soil_type_value, biome_value, int(month), latitude, longitude,
         aridity_index, is_dry_season, ndvi_zscore, ndvi_biome_anomaly
     ]
 
