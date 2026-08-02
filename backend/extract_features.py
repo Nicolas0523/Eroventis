@@ -184,29 +184,50 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
 
 
 def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
+
     polygon_coords = polygon.coordinates().getInfo()[0]
+    
+    area_sq_km = polygon.area().divide(1e6).getInfo()
+    resolution_km = 10
+
     grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
     if not grid_cells:
         return [], []
 
     try:
-        cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
-                .filterBounds(polygon) \
-                .filter(ee.Filter.eq('scenario', 'ssp585')) \
-                .filter(ee.Filter.calendarRange(2044, 2047, 'year')) \
-                .filter(ee.Filter.calendarRange(6, 8, 'month')) \
-                .mean()
+        cmip_coll = ee.ImageCollection("NASA/GDDP-CMIP6") \
+            .filterBounds(polygon) \
+            .filter(ee.Filter.eq('scenario', 'ssp585')) \
+            .filter(ee.Filter.calendarRange(2040, 2050, 'year')) \
+            .filter(ee.Filter.calendarRange(6, 8, 'month'))
 
-        tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
-        rain_future = cmip.select('pr').multiply(86400).rename("rain")
-        wind_future = cmip.select('sfcWind').rename("wind_mean")
-        moisture_future = cmip.select('hurs').divide(100.0).multiply(0.25).rename("soil_moisture")
+        def normalize_cmip_bands(img):
+            t = img.select('tas').subtract(273.15).rename('tempC')
+            p = img.select('pr').multiply(86400).rename('rain')
+            w = img.select('sfcWind').rename('wind_mean')
+            
+            hurs = ee.Algorithms.If(
+                img.bandNames().contains('hurs'),
+                img.select('hurs').divide(100.0).multiply(0.25),
+                ee.Image.constant(0.12)
+            )
+            hurs_img = ee.Image(hurs).rename('soil_moisture')
+            
+            return ee.Image.cat([t, p, w, hurs_img])
+
+        cmip = cmip_coll.map(normalize_cmip_bands).mean()
+
+        tempC_future = cmip.select('tempC')
+        rain_future = cmip.select('rain')
+        wind_future = cmip.select('wind_mean')
+        moisture_future = cmip.select('soil_moisture')
+
     except Exception as e:
-        print(f"CMIP6 Load Error: {e}")
-        tempC_future = ee.Image.constant(38.0).rename("tempC")
-        rain_future = ee.Image.constant(0.2).rename("rain")
+        print(f"[CMIP6 Fallback]: {e}")
+        tempC_future = ee.Image.constant(37.5).rename("tempC")
+        rain_future = ee.Image.constant(0.15).rename("rain")
         wind_future = ee.Image.constant(6.5).rename("wind_mean")
-        moisture_future = ee.Image.constant(0.1).rename("soil_moisture")
+        moisture_future = ee.Image.constant(0.10).rename("soil_moisture")
 
     ndvi_base = raw_data.get("ndvi", ee.Image.constant(0.25))
     ndvi_future = ndvi_base.multiply(0.70).unmask(0.15).rename("NDVI_now")
@@ -236,7 +257,15 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
         }))
     
     fc = ee.FeatureCollection(features_list)
-    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=5000)
+    
+    calc_scale = 10000 if area_sq_km > 10000 else 5000
+
+    reduced_fc = stacked.reduceRegions(
+        collection=fc, 
+        reducer=ee.Reducer.mean(), 
+        scale=calc_scale
+    )
+    
     all_features_data = reduced_fc.getInfo()["features"]
 
     rows = []
@@ -250,7 +279,6 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
         latitude  = props.get("center_lat") or (sum(pt[1] for pt in coords) / len(coords) if coords else 0)
         longitude = props.get("center_lon") or (sum(pt[0] for pt in coords) / len(coords) if coords else 0)
 
-       
         row = _compute_features(
             ndvi_value        = props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.15,
             wind_mean_value   = props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
@@ -271,7 +299,8 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
         grid_meta.append({
             "i": props.get("i", 0),
             "j": props.get("j", 0),
-            "lat": latitude, "lon": longitude,
+            "lat": latitude, 
+            "lon": longitude,
             "step_deg": resolution_km / 111.0
         })
             
