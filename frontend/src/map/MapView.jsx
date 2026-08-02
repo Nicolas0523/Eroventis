@@ -6,7 +6,6 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// ДИНАМИКАЛЫҚ ЖӘНЕ СЕЗІМТАЛ ПАЛИТРА: Төменгі деңгейдегі (0-15%) өзгерістерді керемет көрсетеді
 const getDynamicCommercialColor = (value) => {
   const t = Math.pow(Math.max(0, Math.min(1, value)), 0.6);
   let r, g, b;
@@ -58,7 +57,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     const features = analysis.grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
-        const step = (cell.step_deg || 0.09) * 1.05;
+        const step = (cell.step_deg || 0.09);
         const halfStep = step / 2;
         const rawRisk = cell.risk;
 
@@ -95,7 +94,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     };
   }, [analysis]);
 
-  // Уникальный ключ для ПРИНУДИТЕЛЬНОГО перерисовывания сетки рисков при смене типа/дат/данных
+ 
   const geoJsonKey = useMemo(() => {
     if (!analysis) return "no-data";
     return `${analysis.analysis_type || "default"}_${analysis.start_date}_${analysis.end_date}_${analysis.grid?.length}_${Date.now()}`;
@@ -110,7 +109,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         zoomControl={true}
       >
-        {/* ИСПРАВЛЕНИЕ 1: Возвращаем подложку карты (Dark Mode style) */}
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
@@ -141,7 +139,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           />
         </FeatureGroup>
 
-        {/* ИСПРАВЛЕНИЕ 2: Динамический key заставляет React сбрасывать старый GeoJSON */}
+
         {geoJsonData && (
           <GeoJSON
             key={geoJsonKey}
@@ -149,8 +147,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={canvasRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.55,  
+              fillOpacity: 0.65,  
               stroke: false,
+              opacity: 0,
               weight: 0,
               color: "transparent",
             })}

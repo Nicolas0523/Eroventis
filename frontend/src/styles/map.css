@@ -50,3 +50,8 @@
   image-rendering: crisp-edges;
   transform: translateZ(0);
 }
+
+.leaflet-interactive {
+  outline: none !important;
+  stroke: none !important;
+}
