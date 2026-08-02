@@ -130,9 +130,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                 allowIntersection: false,
                 drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
                 shapeOptions: { 
-                  color: "transparent", 
-                  weight: 0, 
-                  fillOpacity: 0 
+                  color: "#3b82f6",       // Яркий синий цвет контура (можно поставить #10b981 для зеленого)
+                  weight: 3,             // Толщина линии границы
+                  opacity: 0.9,          // Четкая видимость линии
+                  fillColor: "#3b82f6",   // Легкая заливка во время рисования
+                  fillOpacity: 0.15,     // Прозрачность заливки
+                  dashArray: "6, 6"      // Пунктирная линия (выглядит как профессиональная зона исследования)
                 },
               },
             }}
