@@ -46,7 +46,7 @@ climate_cache = TTLCache(maxsize=50, ttl=86400)
 jobs = OrderedDict()
 MAX_JOBS = 50
 RESOLUTION = 10
-GEE_TIMEOUT_SECONDS = 60 
+GEE_TIMEOUT_SECONDS = 120
 
 jobs_lock = asyncio.Lock()
 analysis_semaphore = asyncio.Semaphore(2)
