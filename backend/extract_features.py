@@ -301,10 +301,14 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
             "j": props.get("j", 0),
             "lat": latitude, 
             "lon": longitude,
-            "step_deg": resolution_km / 111.0
+            "step_deg": resolution_km / 111.0,
+            "raw_ndvi": props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.15,
+            "raw_wind": props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
+            "raw_temp": props.get("tempC") if props.get("tempC") is not None else 36.5
         })
             
     if not rows:
         return [], []
         
-    return rows, grid_meta
+    df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
+    return scaler.transform(df), grid_meta
