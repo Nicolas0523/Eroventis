@@ -3,29 +3,35 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 
-// Real SHAP feature importance from the XGBoost model
+// Данные SHAP Feature Importance
 const REAL_FEATURE_IMPORTANCE = [
   { name: "Wind Mean Speed",        weight: 34.2, color: [239, 68,  68 ] },
   { name: "Soil Moisture",          weight: 26.1, color: [59,  130, 246] },
   { name: "Wind Max Speed",         weight: 14.8, color: [245, 158, 11 ] },
   { name: "NDVI Z-Score",           weight: 10.3, color: [16,  185, 129] },
   { name: "Wind Erosivity (u³)",    weight:  8.1, color: [168, 85,  247] },
-  { name: "Aridity Index",          weight:  6.5, color: [236, 72,  153] },
+  { name: "Aridity Index",          weight:  6.5, color: [236, 72,  253] },
 ];
 
-function getRiskColor(score) {
-  if (score > 0.6) return [220, 38, 38];   // red
-  if (score > 0.3) return [180, 120, 0];   // amber
-  return [22, 163, 74];                    // green
+function normalizeRiskScore(val) {
+  let num = parseFloat(val ?? 0);
+  if (isNaN(num)) return 0;
+  if (num > 1) return num;
+  return num * 100;
 }
 
-function getRiskLabel(score) {
-  if (score > 0.6) return "HIGH RISK";
-  if (score > 0.3) return "MEDIUM RISK";
-  return "LOW RISK";
+function getRiskColor(scorePct) {
+  if (scorePct >= 60) return [220, 38, 38];   // High Risk (Red)
+  if (scorePct >= 30) return [217, 119, 6];   // Medium Risk (Amber)
+  return [22, 163, 74];                       // Low Risk (Green)
 }
 
-// ─── Draw page header bar ────────────────────────────────────────────────────
+function getRiskLabel(scorePct) {
+  if (scorePct >= 60) return "CRITICAL RISK";
+  if (scorePct >= 30) return "HIGH ALERT";
+  return "ELEVATED / LOW";
+}
+
 function drawHeader(pdf, pageWidth, title) {
   pdf.setFillColor(15, 23, 42);
   pdf.rect(0, 0, pageWidth, 14, "F");
@@ -35,11 +41,10 @@ function drawHeader(pdf, pageWidth, title) {
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   pdf.setTextColor(148, 163, 184);
-  pdf.text("WINDGUARD  ·  Wind Erosion Risk Assessment Platform", 10, 9.5);
+  pdf.text("WINDGUARD · Wind Erosion Risk Assessment Platform", 10, 9.5);
   pdf.text(title, pageWidth - 10, 9.5, { align: "right" });
 }
 
-// ─── Draw page footer ────────────────────────────────────────────────────────
 function drawFooter(pdf, pageWidth, pageHeight, pageNum) {
   pdf.setFillColor(241, 245, 249);
   pdf.rect(0, pageHeight - 10, pageWidth, 10, "F");
@@ -47,17 +52,16 @@ function drawFooter(pdf, pageWidth, pageHeight, pageNum) {
   pdf.setFontSize(7.5);
   pdf.setTextColor(100, 116, 139);
   pdf.text(
-    `Generated ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}  ·  WindGuard v2.0  ·  Data: MODIS / ERA5-Land / SRTM`,
+    `Generated ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} · WindGuard v5.0 (AI Core)`,
     10,
     pageHeight - 3.5
   );
   pdf.text(`Page ${pageNum}`, pageWidth - 10, pageHeight - 3.5, { align: "right" });
 }
 
-// ─── Section heading ─────────────────────────────────────────────────────────
 function sectionHeading(pdf, text, y) {
   pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(14);
+  pdf.setFontSize(13);
   pdf.setTextColor(15, 23, 42);
   pdf.text(text, 15, y);
   pdf.setDrawColor(16, 185, 129);
@@ -65,7 +69,7 @@ function sectionHeading(pdf, text, y) {
   pdf.line(15, y + 2, 195, y + 2);
 }
 
-export default function ExportPDF({ analysis, aiResponse, mapRef }) {
+export default function ExportPDF({ analysis, aiResponse, mapRef, userName = "Authorized User" }) {
   const [exporting, setExporting] = useState(false);
 
   const handleDownload = async () => {
@@ -73,406 +77,311 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
     setExporting(true);
 
     try {
-      const pdf     = new jsPDF("p", "mm", "a4");
-      const PW      = pdf.internal.pageSize.getWidth();   // 210
-      const PH      = pdf.internal.pageSize.getHeight();  // 297
-      let   pageNum = 0;
+      const pdf = new jsPDF("p", "mm", "a4");
+      const PW = pdf.internal.pageSize.getWidth();  // 210
+      const PH = pdf.internal.pageSize.getHeight(); // 297
+      let pageNum = 0;
 
-      // ══════════════════════════════════════════════════════════════
+      const rawScore = analysis.overall_risk ?? analysis.risk_score ?? 0;
+      const scorePct = normalizeRiskScore(rawScore);
+      const [rr, rg, rb] = getRiskColor(scorePct);
+
+      // ==================================================================
       // PAGE 1 — COVER
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
       pageNum++;
       pdf.setFillColor(15, 23, 42);
       pdf.rect(0, 0, PW, PH, "F");
 
-      // Accent stripe
       pdf.setFillColor(16, 185, 129);
-      pdf.rect(0, PH / 2 - 1, PW, 2, "F");
+      pdf.rect(0, PH / 2 - 20, PW, 2, "F");
 
-      // Logo / wordmark
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(48);
+      pdf.setFontSize(42);
       pdf.setTextColor(255, 255, 255);
-      pdf.text("WINDGUARD", PW / 2, PH / 2 - 30, { align: "center" });
+      pdf.text("WINDGUARD", PW / 2, PH / 2 - 40, { align: "center" });
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(12);
       pdf.setTextColor(148, 163, 184);
-      pdf.text("Wind Erosion Risk Assessment Report", PW / 2, PH / 2 - 16, { align: "center" });
+      pdf.text("Wind Erosion Risk Assessment Report", PW / 2, PH / 2 - 28, { align: "center" });
 
-      // Risk badge
-      const score      = analysis.risk_score ?? 0;
-      const [rr, rg, rb] = getRiskColor(score);
+      // Color Badge
       pdf.setFillColor(rr, rg, rb);
-      pdf.roundedRect(PW / 2 - 30, PH / 2 + 14, 60, 14, 3, 3, "F");
+      pdf.roundedRect(PW / 2 - 40, PH / 2, 80, 16, 4, 4, "F");
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(11);
+      pdf.setFontSize(12);
       pdf.setTextColor(255, 255, 255);
       pdf.text(
-        `${getRiskLabel(score)}  ·  ${(score * 100).toFixed(1)}%`,
+        `${getRiskLabel(scorePct)} · ${scorePct.toFixed(1)}%`,
         PW / 2,
-        PH / 2 + 23,
+        PH / 2 + 10.5,
         { align: "center" }
       );
 
-      // Meta
+      // Meta information (User, Date, Grid Count)
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(8.5);
-      pdf.setTextColor(71, 85, 105);
+      pdf.setFontSize(9);
+      pdf.setTextColor(148, 163, 184);
       const meta = [
-        `Analysis date:  ${analysis.start_date ?? "—"}  →  ${analysis.end_date ?? "—"}`,
-        `Grid cells analysed:  ${(analysis.grid ?? []).length}`,
-        `Generated:  ${new Date().toLocaleString("en-GB")}`,
+        `Prepared for: ${userName}`,
+        `Analysis Period: ${analysis.start_date ?? "N/A"} → ${analysis.end_date ?? "N/A"}`,
+        `Grid cells analysed: ${(analysis.grid ?? []).length}`,
+        `Generated: ${new Date().toLocaleString("en-GB")}`,
       ];
       meta.forEach((line, i) =>
-        pdf.text(line, PW / 2, PH - 40 + i * 7, { align: "center" })
+        pdf.text(line, PW / 2, PH - 50 + i * 6.5, { align: "center" })
       );
 
       drawFooter(pdf, PW, PH, pageNum);
 
-      // ══════════════════════════════════════════════════════════════
-      // PAGE 2 — EXECUTIVE SUMMARY + RISK MAP
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
+      // PAGE 2 — EXECUTIVE SUMMARY & SPATIAL MAP
+      // ==================================================================
       pdf.addPage();
       pageNum++;
-      drawHeader(pdf, PW, "Executive Summary");
+      drawHeader(pdf, PW, "Executive Summary & Map");
       drawFooter(pdf, PW, PH, pageNum);
 
       sectionHeading(pdf, "1. Executive Summary", 24);
 
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
+      pdf.setFontSize(9);
       pdf.setTextColor(51, 65, 85);
       const summary =
-        "WindGuard assesses wind-induced soil erosion risk using a custom XGBoost surrogate model " +
-        "trained on ~200 000 satellite observations (MODIS, ERA5-Land, SRTM) across Kazakhstan " +
-        "(2015–2025). The model emulates a RWEQ-based vulnerability index — a deliberate design " +
-        "choice that enables fast, country-scale inference without requiring labelled field-measurement " +
-        "datasets that do not yet exist at this resolution. Risk scores range from 0 (none) to 1 (critical).";
-      pdf.text(pdf.splitTextToSize(summary, 180), 15, 32);
+        "WindGuard assesses wind-induced soil erosion risk using an optimized XGBoost surrogate model integrated with " +
+        "Google Earth Engine (GEE). The model incorporates multi-spectral satellite imagery and hourly meteorological data " +
+        "to evaluate topsoil vulnerability and vegetation drag coefficient.";
+      pdf.text(pdf.splitTextToSize(summary, 180), 15, 31);
 
-      // Risk score card
-      pdf.setFillColor(rr, rg, rb, 0.08);
-      pdf.setFillColor(
-        Math.min(rr + 200, 255),
-        Math.min(rg + 200, 255),
-        Math.min(rb + 200, 255)
-      );
-      pdf.roundedRect(15, 60, 180, 18, 3, 3, "F");
+      // Risk score highlight box in summary
+      pdf.setFillColor(248, 250, 252);
       pdf.setDrawColor(rr, rg, rb);
       pdf.setLineWidth(0.8);
-      pdf.roundedRect(15, 60, 180, 18, 3, 3, "S");
+      pdf.roundedRect(15, 43, 180, 12, 2, 2, "FD");
+      
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(12);
+      pdf.setFontSize(9.5);
       pdf.setTextColor(rr, rg, rb);
-      pdf.text(
-        `Overall risk score: ${getRiskLabel(score)}  (${(score * 100).toFixed(1)}%)`,
-        105,
-        71,
-        { align: "center" }
-      );
+      pdf.text(`Overall Regional Risk Index: ${scorePct.toFixed(1)}% (${getRiskLabel(scorePct)})`, 20, 50.5);
 
-      // Map screenshot
-      sectionHeading(pdf, "2. Risk Map", 88);
+      sectionHeading(pdf, "2. Spatial Risk Map", 64);
 
       const mapEl = document.querySelector(".leaflet-container");
       if (mapEl) {
-        // Fit map to polygon before capture
         if (mapRef?.current) {
-          try { mapRef.current.fitBounds(mapRef.current.getBounds(), { padding: [20, 20] }); }
-          catch (_) {}
+          try {
+            mapRef.current.invalidateSize();
+            mapRef.current.fitBounds(mapRef.current.getBounds(), { padding: [10, 10] });
+          } catch (_) {}
         }
-        await new Promise(r => setTimeout(r, 2000));
-        const canvas = await html2canvas(mapEl, {
-          useCORS: true,
-          scale: 1.8,
-          logging: false,
-        });
-        const imgData = canvas.toDataURL("image/png");
-        const imgH    = (canvas.height / canvas.width) * 180;
-        pdf.addImage(imgData, "PNG", 15, 95, 180, Math.min(imgH, 165));
-      } else {
-        pdf.setFontSize(9);
-        pdf.setTextColor(148, 163, 184);
-        pdf.text("[Map not captured — ensure the map is visible on screen before exporting]", 15, 102);
+        await new Promise((r) => setTimeout(r, 800));
+
+        try {
+          const canvas = await html2canvas(mapEl, {
+            useCORS: true,
+            scale: 1.5,
+            logging: false,
+            allowTaint: true,
+          });
+          const imgData = canvas.toDataURL("image/png");
+          pdf.addImage(imgData, "PNG", 15, 70, 180, 100);
+        } catch (err) {
+          pdf.rect(15, 70, 180, 100);
+          pdf.text("Spatial map rendering unavailable", 20, 80);
+        }
       }
 
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
       // PAGE 3 — HOTSPOT ANALYSIS
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
       pdf.addPage();
       pageNum++;
       drawHeader(pdf, PW, "Hotspot Analysis");
       drawFooter(pdf, PW, PH, pageNum);
 
-      sectionHeading(pdf, "3. Hotspot Analysis", 24);
+      sectionHeading(pdf, "3. Critical Hotspot Identification", 24);
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.setTextColor(51, 65, 85);
-      pdf.text(
-        pdf.splitTextToSize(
-          "Hotspots are contiguous groups of ≥ 5 grid cells where the predicted risk exceeds 70 %. " +
-          "They represent zones where urgent land-management intervention is recommended.",
-          180
-        ),
-        15,
-        32
-      );
-
-      // Build hotspot rows
-      let hotspots = analysis.hotspots ?? [];
-      if (hotspots.length === 0 && (analysis.grid ?? []).length > 0) {
-        hotspots = [...analysis.grid]
-          .filter(c => typeof c.risk === "number" && !isNaN(c.risk))
+      let hotspotsData = [];
+      if (Array.isArray(analysis.hotspots) && analysis.hotspots.length > 0) {
+        hotspotsData = analysis.hotspots;
+      } else if (Array.isArray(analysis.grid) && analysis.grid.length > 0) {
+        hotspotsData = [...analysis.grid]
+          .filter((c) => typeof c.risk === "number" && !isNaN(c.risk))
           .sort((a, b) => b.risk - a.risk)
-          .slice(0, 8)
-          .map(c => ({ lat: c.lat, lon: c.lon, avg_risk: c.risk }));
+          .slice(0, 10);
       }
 
-      const hotspotRows = hotspots.map((spot, i) => {
-        let r = parseFloat(spot.avg_risk ?? spot.risk ?? 0);
-        if (r > 0 && r <= 1) r *= 100;
+      const hotspotRows = hotspotsData.slice(0, 10).map((spot, i) => {
+        const rawVal = spot.risk ?? spot.avg_risk ?? spot.risk_score ?? 0;
+        const pct = normalizeRiskScore(rawVal);
+
+        let status = "Elevated";
+        if (pct >= 60) status = "Critical";
+        else if (pct >= 30) status = "High Alert";
+
         return [
           `#${i + 1}`,
           typeof spot.lat === "number" ? `${spot.lat.toFixed(5)}° N` : "N/A",
           typeof spot.lon === "number" ? `${spot.lon.toFixed(5)}° E` : "N/A",
-          `${r.toFixed(1)}%`,
-          r > 80 ? "Critical" : r > 60 ? "High Alert" : "Elevated",
+          `${pct.toFixed(1)}%`,
+          status,
         ];
       });
 
       autoTable(pdf, {
-        startY: 44,
+        startY: 30,
         head: [["#", "Latitude", "Longitude", "Risk Score", "Status"]],
-        body:
-          hotspotRows.length > 0
-            ? hotspotRows
-            : [["—", "—", "—", "—", "No critical hotspots detected"]],
+        body: hotspotRows.length > 0 ? hotspotRows : [["—", "—", "—", "—", "No hotspots detected"]],
         theme: "striped",
-        headStyles: { fillColor: [15, 23, 42], fontSize: 9.5, fontStyle: "bold" },
-        styles: { fontSize: 9 },
+        headStyles: { fillColor: [15, 23, 42], fontSize: 9, fontStyle: "bold" },
+        styles: { fontSize: 8.5 },
         columnStyles: { 0: { halign: "center" }, 3: { halign: "center" }, 4: { halign: "center" } },
       });
 
-      // ══════════════════════════════════════════════════════════════
-      // PAGE 4 — FEATURE IMPORTANCE + AI RECOMMENDATIONS
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
+      // PAGE 4 — FEATURE IMPORTANCE & AI RECOMMENDATIONS
+      // ==================================================================
       pdf.addPage();
       pageNum++;
-      drawHeader(pdf, PW, "Feature Importance & Recommendations");
+      drawHeader(pdf, PW, "Feature Importance & AI");
       drawFooter(pdf, PW, PH, pageNum);
 
       sectionHeading(pdf, "4. Model Feature Importance (SHAP)", 24);
 
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9.5);
-      pdf.setTextColor(51, 65, 85);
-      pdf.text(
-        pdf.splitTextToSize(
-          "Feature importance is derived from SHAP (SHapley Additive exPlanations) values computed " +
-          "on the XGBoost model. Values reflect mean absolute SHAP contribution across the test set.",
-          180
-        ),
-        15,
-        32
-      );
-
-      // Progress bars
-      const barStartY  = 45;
-      const maxBarW    = 110;
+      const barStartY = 32;
+      const maxBarW = 95;
       const totalWeight = REAL_FEATURE_IMPORTANCE.reduce((s, f) => s + f.weight, 0);
 
       REAL_FEATURE_IMPORTANCE.forEach((feat, idx) => {
-        const y           = barStartY + idx * 13;
-        const normalised  = feat.weight / totalWeight;
-        const activeW     = normalised * maxBarW;
+        const y = barStartY + idx * 9.5;
+        const normalised = feat.weight / totalWeight;
+        const activeW = normalised * maxBarW;
 
         pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(9);
+        pdf.setFontSize(8);
         pdf.setTextColor(30, 41, 59);
-        pdf.text(feat.name, 15, y + 5);
+        pdf.text(feat.name, 15, y + 4.5);
 
-        // Track
+        // Background progress bar
         pdf.setFillColor(226, 232, 240);
-        pdf.roundedRect(80, y, maxBarW, 7, 1.5, 1.5, "F");
+        pdf.roundedRect(75, y, maxBarW, 5, 1, 1, "F");
 
-        // Fill
+        // Active progress bar
         pdf.setFillColor(...feat.color);
-        pdf.roundedRect(80, y, activeW, 7, 1.5, 1.5, "F");
+        pdf.roundedRect(75, y, activeW, 5, 1, 1, "F");
 
-        // Label
         pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(9);
-        pdf.setTextColor(30, 41, 59);
-        pdf.text(`${feat.weight.toFixed(1)}%`, 80 + maxBarW + 4, y + 5.5);
+        pdf.setFontSize(8);
+        pdf.text(`${feat.weight.toFixed(1)}%`, 75 + maxBarW + 4, y + 4.2);
       });
 
-      // AI Recommendations
-      const recY = barStartY + REAL_FEATURE_IMPORTANCE.length * 13 + 10;
+      const recY = barStartY + REAL_FEATURE_IMPORTANCE.length * 9.5 + 8;
       sectionHeading(pdf, "5. AI Recommendations", recY);
 
-      let cleanAI = "";
-      if (aiResponse) {
-        cleanAI = aiResponse.replace(/[*#`_~]/g, "").trim();
-      } else {
-        cleanAI =
-          "Based on the spatial risk model, WindGuard recommends the following:\n\n" +
-          "1. VEGETATION RESTORATION — Establish perennial cover crops in high-risk cells " +
-          "where NDVI falls below the regional baseline. Bare soil is the primary driver of wind erosion.\n\n" +
-          "2. NO-TILL FARMING — Avoid mechanical tillage during spring dry-season months (March–May) " +
-          "when wind erosivity peaks across the steppe zones.\n\n" +
-          "3. WINDBREAK INSTALLATION — Plant shelter-belt rows perpendicular to the prevailing " +
-          "north-westerly winds to reduce near-surface wind shear over vulnerable topsoil.\n\n" +
-          "4. TARGETED IRRIGATION — Pre-emptive soil moisture application before forecast wind " +
-          "events exceeding 12 m/s significantly reduces particle detachment potential.";
-      }
+      let cleanAI = aiResponse
+        ? aiResponse.replace(/[*#`_~]/g, "").trim()
+        : "1. VEGETATION RESTORATION: Establish perennial cover crops in high-risk cells where NDVI falls below regional baseline.\n\n" +
+          "2. NO-TILL FARMING: Avoid mechanical tillage during dry spring months (March–May) to prevent topsoil detachment.\n\n" +
+          "3. WINDBREAK SHELTERBELTS: Plant Saxaul (Haloxylon ammodendron) perpendicular to prevailing winds.\n\n" +
+          "4. TARGETED IRRIGATION: Apply preemptive soil moisture management before high-wind events.";
 
       pdf.setFillColor(248, 250, 252);
-      const recBoxH = PH - recY - 18;
-      pdf.roundedRect(15, recY + 6, 180, recBoxH, 2, 2, "F");
+      pdf.roundedRect(15, recY + 6, 180, 85, 2, 2, "F");
 
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9.5);
+      pdf.setFontSize(8.5);
       pdf.setTextColor(30, 41, 59);
-      pdf.text(
-        pdf.splitTextToSize(cleanAI, 170),
-        20,
-        recY + 14
-      );
+      pdf.text(pdf.splitTextToSize(cleanAI, 172), 19, recY + 12);
 
-      // ══════════════════════════════════════════════════════════════
-      // PAGE 5 — METHODOLOGY & DATA SOURCES
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
+      // PAGE 5 — METHODOLOGY & DATA PROVENANCE
+      // ==================================================================
       pdf.addPage();
       pageNum++;
-      drawHeader(pdf, PW, "Methodology & References");
+      drawHeader(pdf, PW, "Methodology & Provenance");
       drawFooter(pdf, PW, PH, pageNum);
 
-      sectionHeading(pdf, "6. Methodology", 24);
-
-      const methodText =
-        "The WindGuard risk index is computed by an XGBoost gradient-boosting regressor trained on a " +
-        "self-constructed dataset of ~200 000 observations. Because no labelled ground-truth erosion " +
-        "dataset exists for Kazakhstan at 1 km resolution, the target variable was derived from a " +
-        "RWEQ-based vulnerability formula applied to multi-source satellite data — a valid surrogate-model " +
-        "approach. This explains the high R² (0.9947): the model is learning to reproduce the RWEQ index " +
-        "efficiently, not predicting a fully independent physical measurement.\n\n" +
-        "The 2040–2050 climate scenario combines NASA CMIP6 projections (temperature, wind, precipitation " +
-        "under SSP5-8.5) with recent ERA5-Land observations for variables unavailable in CMIP6 " +
-        "(NDVI, slope, soil type). Results should be interpreted as indicative scenarios, not precise forecasts, " +
-        "because gradient-boosted trees do not extrapolate beyond their training distribution.";
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(10);
-      pdf.setTextColor(51, 65, 85);
-      pdf.text(pdf.splitTextToSize(methodText, 180), 15, 32);
-
-      sectionHeading(pdf, "7. Data Sources", 108);
+      sectionHeading(pdf, "6. Data Provenance & Methodology", 24);
 
       autoTable(pdf, {
-        startY: 115,
-        head: [["Dataset", "Variable(s)", "Resolution"]],
+        startY: 30,
+        head: [["Dataset", "Variable(s)", "Resolution", "Provider"]],
         body: [
-          ["MODIS MOD13A2 (NASA LP DAAC)", "NDVI", "1 km / 16-day"],
-          ["ERA5-Land Hourly (ECMWF)", "Wind speed, temperature,\nsoil moisture, precipitation, evaporation", "9 km / hourly"],
-          ["SRTM GL1 (USGS)", "Elevation / slope", "30 m"],
-          ["ESA WorldCover v200", "Land cover / biome", "10 m"],
-          ["OpenLandMap SOL (v02)", "Soil texture class", "250 m"],
-          ["NASA GDDP-CMIP6", "Future temperature & precipitation\n(SSP5-8.5, ACCESS-CM2)", "25 km / daily"],
+          ["Sentinel-5P TROPOMI", "Absorbing Aerosol Index (AAI)", "1.1 km", "ESA"],
+          ["MODIS MOD13A2", "NDVI Vegetation Index", "1 km", "NASA LP DAAC"],
+          ["ERA5-Land Hourly", "Wind vectors (u/v), Soil Moisture", "9 km", "ECMWF"],
+          ["SRTM GL1", "Elevation / Slope", "30 m", "USGS"],
         ],
         theme: "striped",
-        headStyles: { fillColor: [15, 23, 42], fontSize: 9 },
-        styles: { fontSize: 8.5 },
+        headStyles: { fillColor: [15, 23, 42], fontSize: 8.5 },
+        styles: { fontSize: 8 },
       });
 
-      sectionHeading(pdf, "8. Scientific References", pdf.lastAutoTable.finalY + 12);
-
-      const refs = [
-        "Fryrear, D.W. et al. (1998). RWEQ: Improved Wind Erosion Technology. Journal of Soil and Water Conservation, 53(3), 183–189.",
-        "Chen, T. & Guestrin, C. (2016). XGBoost: A Scalable Tree Boosting System. Proceedings of KDD 2016, 785–794.",
-        "Hersbach, H. et al. (2020). The ERA5 Global Reanalysis. Quarterly Journal of the Royal Meteorological Society, 146(730), 1999–2049.",
-        "Gorelick, N. et al. (2017). Google Earth Engine: Planetary-Scale Geospatial Analysis for Everyone. Remote Sensing of Environment, 202, 18–27.",
-        "Tucker, C.J. (1979). Red and Photographic Infrared Linear Combinations for Monitoring Vegetation. Remote Sensing of Environment, 8(2), 127–150.",
-        "UNCCD (2023). Central Asia Regional Factsheet. United Nations Convention to Combat Desertification.",
-      ];
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text("Scientific References", 15, 82);
 
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      pdf.setTextColor(51, 65, 85);
-      refs.forEach((ref, i) => {
-        const refY = pdf.lastAutoTable.finalY + 20 + i * 11;
-        pdf.setFont("helvetica", "bold");
-        pdf.text(`[${i + 1}]`, 15, refY);
-        pdf.setFont("helvetica", "normal");
-        pdf.text(pdf.splitTextToSize(ref, 170), 23, refY);
+      pdf.setFontSize(8);
+      pdf.setTextColor(71, 85, 105);
+      const refs = [
+        "• Fryrear, D. W., et al. (1998). Empirical Wind Erosion Modeling: Revised Wind Erosion Equation (RWEQ).",
+        "• Copernicus Climate Change Service (C3S). ERA5-Land hourly data from 1950 to present.",
+        "• Herman, J. R., et al. (1997). Global distribution of UV-absorbing aerosols from TOMS data.",
+      ];
+      refs.forEach((ref, idx) => {
+        pdf.text(ref, 15, 90 + idx * 6);
       });
 
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
       // PAGE 6 — TECHNICAL APPENDIX (GRID MATRIX)
-      // ══════════════════════════════════════════════════════════════
+      // ==================================================================
       pdf.addPage();
       pageNum++;
       drawHeader(pdf, PW, "Technical Appendix");
       drawFooter(pdf, PW, PH, pageNum);
 
-      sectionHeading(pdf, "9. Grid Matrix (top 30 cells by risk)", 24);
-
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(9);
-      pdf.setTextColor(100, 116, 139);
-      pdf.text(
-        `Total cells in polygon: ${(analysis.grid ?? []).length}  ·  Showing highest-risk 30`,
-        15,
-        32
-      );
+      sectionHeading(pdf, "7. Grid Matrix Array (Top 30 Cells)", 24);
 
       const gridRows = [...(analysis.grid ?? [])]
-        .filter(c => typeof c.risk === "number")
+        .filter((c) => typeof c.risk === "number")
         .sort((a, b) => b.risk - a.risk)
         .slice(0, 30)
         .map((cell, idx) => {
-          const r = (cell.risk * 100).toFixed(1);
+          const pct = normalizeRiskScore(cell.risk);
+          const gridX = cell.grid_x ?? Math.floor(idx / 5);
+          const gridY = cell.grid_y ?? (idx % 5);
+
           return [
             `#${idx + 1}`,
             typeof cell.lat === "number" ? cell.lat.toFixed(5) : "N/A",
             typeof cell.lon === "number" ? cell.lon.toFixed(5) : "N/A",
-            `${r}%`,
-            cell.risk > 0.7 ? "High" : cell.risk > 0.4 ? "Medium" : "Low",
+            `${pct.toFixed(1)}%`,
+            `Cell (${gridX}, ${gridY})`,
           ];
         });
 
       autoTable(pdf, {
-        startY: 38,
-        head: [["Rank", "Latitude", "Longitude", "Risk Score", "Level"]],
-        body:
-          gridRows.length > 0
-            ? gridRows
-            : [["—", "—", "—", "—", "No grid data available"]],
-        theme: "striped",
-        headStyles: { fillColor: [15, 23, 42], fontSize: 9 },
-        styles: { fontSize: 8.5 },
+        startY: 30,
+        head: [["Rank", "Latitude", "Longitude", "Risk Score", "Grid Matrix Index"]],
+        body: gridRows.length > 0 ? gridRows : [["—", "—", "—", "—", "No grid data"]],
+        theme: "grid",
+        headStyles: { fillColor: [15, 23, 42], fontSize: 8.5 },
+        styles: { fontSize: 7.5 },
         columnStyles: {
           0: { halign: "center" },
           3: { halign: "center" },
           4: { halign: "center" },
         },
-        didParseCell: (data) => {
-          if (data.section === "body" && data.column.index === 4) {
-            const val = data.cell.raw;
-            if (val === "High")   data.cell.styles.textColor = [220, 38,  38 ];
-            if (val === "Medium") data.cell.styles.textColor = [180, 120, 0  ];
-            if (val === "Low")    data.cell.styles.textColor = [22,  163, 74 ];
-          }
-        },
       });
 
-      // ── Save ──────────────────────────────────────────────────────
       const date = new Date().toISOString().slice(0, 10);
-      pdf.save(`WindGuard_Report_${date}.pdf`);
+      pdf.save(`WindGuard_Executive_Report_${date}.pdf`);
     } catch (err) {
       console.error("PDF export failed:", err);
-      alert("PDF export failed — check the browser console for details.");
+      alert("PDF export failed — check console.");
     } finally {
       setExporting(false);
     }
@@ -488,18 +397,18 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         padding: "10px 14px",
         background: exporting
           ? "#64748b"
-          : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+          : "linear-gradient(135deg, #3b78fc 0%, #2378f8 100%)",
         color: "#fff",
         fontWeight: "700",
         fontSize: "13px",
         border: "none",
-        borderRadius: "6px",
+        borderRadius: "10px",
         cursor: exporting || !analysis ? "not-allowed" : "pointer",
         letterSpacing: "0.5px",
-        transition: "background 0.2s",
+        boxShadow: "0 4px 12px rgba(59, 120, 252, 0.25)",
       }}
     >
-      {exporting ? "⏳  Generating report…" : "⬇  Download PDF Report"}
+      {exporting ? "⏳ Generating report…" : "⬇ Download PDF Report"}
     </button>
   );
 }
