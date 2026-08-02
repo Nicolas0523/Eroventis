@@ -1,10 +1,12 @@
 import React, { useMemo } from "react";
 import { MapContainer, TileLayer, GeoJSON, FeatureGroup } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
+import L from "leaflet";
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
+// Функция расчета градиентного цвета с высоким контрастом
 const getHighContrastColor = (value) => {
   const t = Math.max(0, Math.min(1, value));
   let r, g, b;
@@ -34,7 +36,10 @@ const getHighContrastColor = (value) => {
   return `rgb(${r}, ${g}, ${b})`;
 };
 
-export default function MapView({ analysis, setPolygon }) {
+// Canvas Renderer для предотвращения появление швов рендеринга
+const canvasRenderer = L.canvas({ padding: 0.5 });
+
+export default function MapView({ analysis, setPolygon, mapRef }) {
   const _onCreate = (e) => {
     const { layerType, layer } = e;
     if (layerType === "polygon") {
@@ -62,7 +67,8 @@ export default function MapView({ analysis, setPolygon }) {
     const features = analysis.grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
-        const step = (cell.step_deg || 0.09) * 1.02;
+        // Добавляем минимальный множитель 1.05 для перекрытия micro-gaps
+        const step = (cell.step_deg || 0.09) * 1.05;
         const halfStep = step / 2;
 
         const rawRisk = cell.risk > 1 ? cell.risk / 100 : cell.risk;
@@ -97,6 +103,7 @@ export default function MapView({ analysis, setPolygon }) {
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <MapContainer
+        ref={mapRef}
         center={[48.0196, 66.9237]}
         zoom={5}
         style={{ height: "100%", width: "100%", background: "#0b0f19" }}
@@ -131,11 +138,12 @@ export default function MapView({ analysis, setPolygon }) {
           <GeoJSON
             key={JSON.stringify(analysis?.start_date || "grid")}
             data={geoJsonData}
+            renderer={canvasRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.9,
-              stroke: false,  
-              weight: 0,      
+              fillOpacity: 0.95,
+              stroke: false,
+              weight: 0,
               color: "transparent",
             })}
           />
