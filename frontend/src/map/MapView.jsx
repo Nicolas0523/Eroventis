@@ -111,10 +111,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         zoomControl={true}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://carto.com">CARTO</a>'
-          url="https://{s}://{z}/{x}/{y}{r}.png"
-        />
 
         <FeatureGroup>
           <EditControl
@@ -131,7 +127,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                 allowIntersection: false,
                 drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
                 shapeOptions: { 
-                  color: "transparent", // Сделали синюю обводку невидимой после отрисовки
+                  color: "transparent", 
                   weight: 0, 
                   fillOpacity: 0 
                 },
@@ -146,7 +142,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             data={geoJsonData}
             renderer={canvasRenderer}
             
-            // Жесткие опции Canvas для минимизации белых швов между ячейками
             options={{
               stroke: false,
               weight: 0,
@@ -155,13 +150,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.55,  // Прозрачность 55% позволяет рельефу CARTO проступать сквозь цвета
+              fillOpacity: 0.55,  
               stroke: false,
               weight: 0,
               color: "transparent",
             })}
             onEachFeature={(feature, layer) => {
-              // Перевод индекса (0-2.0) в процент для красивого вывода в Popup
               const pctRisk = ((feature.properties.raw_risk / 2.0) * 100).toFixed(1);
               layer.bindPopup(`
                 <div style="font-family: sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4;">
