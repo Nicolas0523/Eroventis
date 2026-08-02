@@ -141,10 +141,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={canvasRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0,  
-              stroke: false,
-              weight: 0,
-              color: "transparent",
+              fillOpacity: 0.52,  
+              stroke: false,         
+              weight: 0,             
+              color: "transparent",  
             })}
             onEachFeature={(feature, layer) => {
               // Спутниктік таргетті (0-2.0) процентке айналдырып Popup жасау
