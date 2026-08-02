@@ -1,7 +1,9 @@
+import joblib
+import numpy as np  
+from datetime import datetime
 from extract_features import extract_features, extract_features_grid, extract_future_features_grid
 from data_loader import load_raw_data, load_raw_data_multi_year
 from config import ml_model, features, target_scaler, bias_shift
-from datetime import datetime
 
 
 def prediction_val(polygon, start_date, end_date):
@@ -28,6 +30,8 @@ def prediction_val(polygon, start_date, end_date):
     real_aerosol_risk = target_scaler.inverse_transform(calibrated_result.reshape(-1, 1))
 
     final_score = float(real_aerosol_risk[0][0])
+    if final_score < 0:
+        final_score = 0.0
 
     return round(final_score, 4)
 
@@ -57,6 +61,8 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
 
     calibrated_preds = raw_preds + bias_shift
     real_preds = target_scaler.inverse_transform(calibrated_preds.reshape(-1, 1)).flatten()
+    
+    real_preds = np.clip(real_preds, 0, None) 
 
     grid_results = []
     for i, (cell, risk) in enumerate(zip(coords_meta, real_preds)):
@@ -92,6 +98,8 @@ def prediction_future_grid(polygon, month, resolution_km=10):
 
     calibrated_preds = raw_preds + bias_shift
     real_preds = target_scaler.inverse_transform(calibrated_preds.reshape(-1, 1)).flatten()
+    
+    real_preds = np.clip(real_preds, 0, None) 
 
     grid_results = []
     for cell, risk in zip(coords_meta, real_preds):
