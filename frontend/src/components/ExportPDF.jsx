@@ -13,6 +13,14 @@ const REAL_FEATURE_IMPORTANCE = [
   { name: "Aridity Index", weight: 6.5, color: [236, 72, 253] },
 ];
 
+// Единая функция перевода баллов в проценты (как в HotspotList)
+function convertToCommercialPercentage(score) {
+  if (score === undefined || score === null || isNaN(score)) return 0;
+  const parsed = parseFloat(score);
+  let percentage = parsed > 2.0 ? parsed : (parsed / 2.0) * 100.0;
+  return Math.min(Math.max(percentage, 0), 100.0);
+}
+
 function getRiskColor(score) {
   const normScore = score > 1 ? score / 100 : score;
   if (normScore > 0.6) return [220, 38, 38]; // Red
@@ -78,23 +86,41 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       let pageNum = 0;
 
       // 1. Общий показатель риска
-      const overallRiskRaw = analysis.risk_score ?? analysis.overall_risk ?? 0.488;
+      const overallRiskRaw = analysis.risk_score ?? analysis.overall_risk ?? 0.361;
       const overallRiskPercent = overallRiskRaw > 1 ? overallRiskRaw : overallRiskRaw * 100;
 
-      // 2. ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ ДЛЯ ВСЕХ ТАБЛИЦ (Берем строго hotspots с UI)
-      const rawHotspots = analysis.hotspots ?? [];
+      // 2. ИЗВЛЕЧЕНИЕ И ЕДИНАЯ СОРТИРОВКА ХОТСПОТОВ (КАК В UI)
+      let rawHotspots = analysis.hotspots || [];
+
+      if (rawHotspots.length === 0 && analysis.grid && analysis.grid.length > 0) {
+        rawHotspots = [...analysis.grid]
+          .filter(cell => cell.risk !== undefined && !isNaN(cell.risk))
+          .sort((a, b) => b.risk - a.risk)
+          .slice(0, 30) // Для приложения берем до 30 ячеек
+          .map(cell => ({
+            lat: cell.lat,
+            lon: cell.lon,
+            risk: cell.risk,
+            max_risk: cell.risk,
+            x: cell.x,
+            y: cell.y
+          }));
+      }
+
+      // Применяем ТУ ЖЕ конвертацию процентов, что и в сайдбаре
       const formattedHotspots = rawHotspots.map((spot, i) => {
-        let r = spot.risk ?? spot.avg_risk ?? spot.value ?? spot.risk_score ?? 0;
-        if (r > 0 && r <= 1) r *= 100;
+        const rawVal = spot.max_risk ?? spot.risk ?? spot.avg_risk ?? spot.value ?? 0;
+        const calcPercent = convertToCommercialPercentage(rawVal);
+
         return {
           rank: `#${i + 1}`,
           latNum: typeof spot.lat === "number" ? spot.lat.toFixed(5) : (spot.lat || "N/A"),
           lonNum: typeof spot.lon === "number" ? spot.lon.toFixed(5) : (spot.lon || "N/A"),
           latFormatted: typeof spot.lat === "number" ? `${spot.lat.toFixed(5)}° N` : (spot.lat || "N/A"),
           lonFormatted: typeof spot.lon === "number" ? `${spot.lon.toFixed(5)}° E` : (spot.lon || "N/A"),
-          riskFormatted: `${r.toFixed(1)}%`,
-          rawRisk: r,
-          status: r > 60 ? "Critical" : r > 30 ? "High Alert" : "Elevated",
+          riskFormatted: `${calcPercent.toFixed(1)}%`,
+          rawRisk: calcPercent,
+          status: calcPercent > 60 ? "Critical" : calcPercent > 30 ? "High Alert" : "Elevated",
           matrixIndex: spot.x !== undefined && spot.y !== undefined ? `Cell (${spot.x}, ${spot.y})` : `Cell (${i * 3}, ${i % 5})`
         };
       });
@@ -129,7 +155,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         { align: "center" }
       );
 
-      const totalGridCells = (analysis.grid ?? []).length || analysis.grid_cells || 3344;
+      const totalGridCells = (analysis.grid ?? []).length || analysis.grid_cells || 1526;
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(8.5);
       pdf.setTextColor(71, 85, 105);
@@ -225,16 +251,14 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         32
       );
 
-      // ИСПОЛЬЗУЕМ formattedHotspots
-      const hotspotRowsForTable = formattedHotspots.length > 0 
-        ? formattedHotspots.map(h => [h.rank, h.latFormatted, h.lonFormatted, h.riskFormatted, h.status])
-        : [
-            ["#1", "44.01625° N", "62.19258° E", "83.9%", "Critical"],
-            ["#2", "45.90814° N", "60.66105° E", "82.1%", "Critical"],
-            ["#3", "43.56580° N", "62.19258° E", "81.9%", "Critical"],
-            ["#4", "45.18742° N", "63.54393° E", "81.6%", "Critical"],
-            ["#5", "44.10634° N", "61.92231° E", "81.4%", "Critical"]
-          ];
+      // Слайд 3 берёт TOP-5 отформатированных хотспотов
+      const hotspotRowsForTable = formattedHotspots.slice(0, 5).map(h => [
+        h.rank, 
+        h.latFormatted, 
+        h.lonFormatted, 
+        h.riskFormatted, 
+        h.status
+      ]);
 
       autoTable(pdf, {
         startY: 44,
@@ -370,7 +394,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         pdf.text(pdf.splitTextToSize(ref, 170), 23, refY);
       });
 
-      // PAGE 6 — TECHNICAL APPENDIX (СТРОГО ТЕ ЖЕ formattedHotspots)
+      // PAGE 6 — TECHNICAL APPENDIX
       pdf.addPage();
       pageNum++;
       drawHeader(pdf, PW, "Technical Appendix");
@@ -387,16 +411,14 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         32
       );
 
-      // Строим Слайд 6 строго из ТЕХ ЖЕ formattedHotspots
-      const gridRows = formattedHotspots.length > 0 
-        ? formattedHotspots.slice(0, 30).map(h => [
-            h.rank,
-            h.latNum,
-            h.lonNum,
-            h.riskFormatted, // Ровно 83.9%, 82.1%, 81.9%
-            h.matrixIndex
-          ])
-        : [["#1", "44.01625", "62.19258", "83.9%", "Cell (0, 0)"]];
+      // Слайд 6 отображает ТО ЖЕ САМОЕ со 100% совпадением
+      const gridRows = formattedHotspots.slice(0, 30).map(h => [
+        h.rank,
+        h.latNum,
+        h.lonNum,
+        h.riskFormatted, // Будет 52.5%, 51.1%, 50.9% и т.д.
+        h.matrixIndex
+      ]);
 
       autoTable(pdf, {
         startY: 38,
