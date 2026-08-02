@@ -1,28 +1,30 @@
 import React from "react";
 
+function convertToCommercialPercentage(score) {
+  if (score === undefined || score === null || isNaN(score)) return 0;
+  
+  let percentage = score > 2.0 ? score : (score / 2.0) * 100.0;
+  return Math.min(Math.max(percentage, 0), 100.0);
+}
+
 export default function HotspotList({ analysis }) {
   if (!analysis) return null;
 
-  // 1. Пытаемся взять готовые хотспоты от бэкенда
   let hotspots = analysis.hotspots || [];
 
-  // 2. БУЛЛЕТПРОФ ФОЛБЕК: Если бэкенд не прислал хотспоты, мы вычисляем их сами из сетки (grid)
   if (hotspots.length === 0 && analysis.grid && analysis.grid.length > 0) {
-    // Сортируем ячейки сетки по убыванию риска и берем ТОП-5 самых критических
     hotspots = [...analysis.grid]
       .filter(cell => cell.risk !== undefined && !isNaN(cell.risk))
       .sort((a, b) => b.risk - a.risk)
-      .slice(0, 5) // Берем топ-5
-      .map((cell, idx) => ({
+      .slice(0, 5)
+      .map((cell) => ({
         lat: cell.lat,
         lon: cell.lon,
-        // Сохраняем значение риска
         risk: cell.risk,
         max_risk: cell.risk 
       }));
   }
 
-  // Если вообще никаких данных нет (ни сетки, ни хотспотов) — только тогда скрываем
   if (hotspots.length === 0) {
     return (
       <div className="hotspots-card glass-panel" style={{ marginTop: "16px", padding: "12px", width: "100%" }}>
@@ -58,21 +60,14 @@ export default function HotspotList({ analysis }) {
 
       <div className="hotspots-list" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         {hotspots.map((spot, idx) => {
-          // Вытаскиваем значение риска из любых возможных полей
           const rawRisk = 
             spot.max_risk !== undefined ? spot.max_risk :
             spot.risk !== undefined ? spot.risk :
             spot.avg_risk !== undefined ? spot.avg_risk : 
             0;
 
-          let parsedRisk = parseFloat(rawRisk);
-
-          // Если риск в долях (например, 0.741), переводим в проценты (74.1%)
-          if (!isNaN(parsedRisk) && parsedRisk > 0 && parsedRisk <= 1.0) {
-            parsedRisk = parsedRisk * 100;
-          }
-
-          const riskDisplay = !isNaN(parsedRisk) ? parsedRisk.toFixed(1) : "0.0";
+          const parsedRisk = parseFloat(rawRisk);
+          const finalPercentage = convertToCommercialPercentage(parsedRisk);
 
           return (
             <div 
@@ -92,7 +87,7 @@ export default function HotspotList({ analysis }) {
                 Hotspot #{idx + 1}
               </span>
               <span style={{ color: "#ffffff", fontWeight: "600" }}>
-                Risk: {riskDisplay}%
+                Risk: {finalPercentage.toFixed(1)}%
               </span>
             </div>
           );

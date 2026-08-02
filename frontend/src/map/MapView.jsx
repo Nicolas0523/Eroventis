@@ -1,5 +1,5 @@
-import React from "react";
-import { MapContainer, TileLayer, Rectangle, FeatureGroup } from "react-leaflet";
+import React, { useMemo } from "react";
+import { MapContainer, TileLayer, GeoJSON, FeatureGroup } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
 
 import "leaflet/dist/leaflet.css";
@@ -48,19 +48,57 @@ export default function MapView({ analysis, setPolygon }) {
     setPolygon(null);
   };
 
-  let minRisk = 0;
-  let maxRisk = 1;
+  // Преобразуем сетку в единый GeoJSON объект без нахлестов
+  const geoJsonData = useMemo(() => {
+    if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
-  if (analysis && analysis.grid && analysis.grid.length > 0) {
     const risks = analysis.grid
       .map((cell) => cell.risk)
       .filter((r) => r !== undefined && !isNaN(r));
 
-    if (risks.length > 0) {
-      minRisk = Math.min(...risks);
-      maxRisk = Math.max(...risks);
-    }
-  }
+    const minRisk = risks.length > 0 ? Math.min(...risks) : 0;
+    const maxRisk = risks.length > 0 ? Math.max(...risks) : 1;
+    const range = maxRisk - minRisk;
+
+    const features = analysis.grid
+      .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
+      .map((cell) => {
+        // Вычисляем точный шаг без умножения на 1.05
+        const latStep = cell.step_deg || 10 / 111.0;
+        const rad = (cell.lat * Math.PI) / 180;
+        const lonStep = latStep / Math.max(Math.cos(rad), 0.1);
+
+        const halfLat = latStep / 2;
+        const halfLon = lonStep / 2;
+
+        const normalizedRisk =
+          range > 0.01 ? (cell.risk - minRisk) / range : cell.risk;
+
+        return {
+          type: "Feature",
+          properties: {
+            color: getHighContrastColor(normalizedRisk),
+          },
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                [cell.lon - halfLon, cell.lat - halfLat],
+                [cell.lon + halfLon, cell.lat - halfLat],
+                [cell.lon + halfLon, cell.lat + halfLat],
+                [cell.lon - halfLon, cell.lat + halfLat],
+                [cell.lon - halfLon, cell.lat - halfLat],
+              ],
+            ],
+          },
+        };
+      });
+
+    return {
+      type: "FeatureCollection",
+      features,
+    };
+  }, [analysis]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
@@ -89,46 +127,24 @@ export default function MapView({ analysis, setPolygon }) {
               polygon: {
                 allowIntersection: false,
                 drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
-                shapeOptions: { color: "#3b82f6", weight: 3, fillOpacity: 0.1 }
-              }
+                shapeOptions: { color: "#3b82f6", weight: 3, fillOpacity: 0.1 },
+              },
             }}
           />
         </FeatureGroup>
 
-        {analysis && analysis.grid && analysis.grid.map((cell, index) => {
-          if (cell.lat === undefined || cell.lon === undefined) return null;
-
-          const latStep = cell.step_deg || (10 / 111.0);
-          
-          const rad = (cell.lat * Math.PI) / 180;
-          const lonStep = latStep / Math.max(Math.cos(rad), 0.1);
-
-          const halfLat = (latStep / 2) * 1.05;
-          const halfLon = (lonStep / 2) * 1.05;
-
-          const bounds = [
-            [cell.lat - halfLat, cell.lon - halfLon],
-            [cell.lat + halfLat, cell.lon + halfLon]
-          ];
-
-          const range = maxRisk - minRisk;
-          const normalizedRisk = range > 0.01
-            ? (cell.risk - minRisk) / range
-            : cell.risk;
-
-          return (
-            <Rectangle
-              key={`cell-${index}`}
-              bounds={bounds}
-              pathOptions={{
-                stroke: false, 
-                color: "transparent",
-                fillColor: getHighContrastColor(normalizedRisk),
-                fillOpacity: 0.7,
-              }}
-            />
-          );
-        })}
+        {geoJsonData && (
+          <GeoJSON
+            key={JSON.stringify(analysis?.start_date || "grid")}
+            data={geoJsonData}
+            style={(feature) => ({
+              fillColor: feature.properties.color,
+              fillOpacity: 0.85,
+              stroke: false, // Убираем границы между ячейками
+              weight: 0,
+            })}
+          />
+        )}
       </MapContainer>
     </div>
   );

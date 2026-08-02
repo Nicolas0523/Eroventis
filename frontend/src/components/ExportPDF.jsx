@@ -3,7 +3,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 
-
+// Функция перевода физического индекса Sentinel-5P (0-2.0+) в коммерческий процент (0-100%)
 function convertToCommercialPercentage(score) {
   let percentage = (score / 2.0) * 100.0;
   return Math.min(Math.max(percentage, 0), 100.0);
