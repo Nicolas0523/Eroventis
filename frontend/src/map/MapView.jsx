@@ -56,15 +56,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
   const geoJsonData = useMemo(() => {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
-    // Жаңа v5 спутниктік таргет ауқымын таза анықтау (сырой risk талдауы)
-    const risks = analysis.grid
-      .map((cell) => cell.risk)
-      .filter((r) => r !== undefined && !isNaN(r));
-
-    const minRisk = risks.length > 0 ? Math.min(...risks) : 0;
-    const maxRisk = risks.length > 0 ? Math.max(...risks) : 1;
-    const range = maxRisk - minRisk;
-
     const features = analysis.grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
@@ -72,12 +63,19 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         const halfStep = step / 2;
 
         const rawRisk = cell.risk;
-        const normalizedRisk = range > 0.001 ? (rawRisk - minRisk) / range : rawRisk;
+
+        // =========================================================================
+        // МОДИФИКАЦИЯ: ПЕРЕХОД НА АБСОЛЮТНУЮ ФИЗИЧЕСКУЮ ШКАЛУ SP5 V5
+        // =========================================================================
+        // Делим на 2.0 (пиковый наблюдаемый индекс эрозии/пыли). 
+        // Все, что выше 2.0, принудительно ограничиваем 1.0 (максимальный красный цвет)
+        const normalizedRisk = Math.min(Math.max(rawRisk / 2.0, 0), 1);
+        // =========================================================================
 
         return {
           type: "Feature",
           properties: {
-            color: getDynamicCommercialColor(normalizedRisk),
+            color: getDynamicCommercialColor(normalizedRisk), // Цвет теперь строго зависит от физического значения
             raw_risk: rawRisk,
             ndvi: cell.ndvi,
             wind: cell.wind,
@@ -114,8 +112,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         zoomControl={true}
       >
         <TileLayer
-          attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://carto.com">CARTO</a>'
+          url="https://{s}://{z}/{x}/{y}{r}.png"
         />
 
         <FeatureGroup>
@@ -124,11 +122,19 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             onCreated={_onCreate}
             onDeleted={_onDeleted}
             draw={{
-              rectangle: false, circle: false, circlemarker: false, polyline: false, marker: false,
+              rectangle: false,
+              circle: false,
+              circlemarker: false,
+              polyline: false,
+              marker: false,
               polygon: {
                 allowIntersection: false,
                 drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
-                shapeOptions: { color: "#3b82f6", weight: 3, fillOpacity: 0.1 },
+                shapeOptions: { 
+                  color: "transparent", // Сделали синюю обводку невидимой после отрисовки
+                  weight: 0, 
+                  fillOpacity: 0 
+                },
               },
             }}
           />
@@ -140,6 +146,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             data={geoJsonData}
             renderer={canvasRenderer}
             
+            // Жесткие опции Canvas для минимизации белых швов между ячейками
             options={{
               stroke: false,
               weight: 0,
@@ -148,20 +155,21 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.65,      
-              stroke: false,         
-              weight: 0,             
-              color: "transparent"
+              fillOpacity: 0.55,  // Прозрачность 55% позволяет рельефу CARTO проступать сквозь цвета
+              stroke: false,
+              weight: 0,
+              color: "transparent",
             })}
             onEachFeature={(feature, layer) => {
+              // Перевод индекса (0-2.0) в процент для красивого вывода в Popup
               const pctRisk = ((feature.properties.raw_risk / 2.0) * 100).toFixed(1);
               layer.bindPopup(`
-                <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
+                <div style="font-family: sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4;">
                   <strong style="font-size: 12px; color: #0f172a;">Wind Erosion Details</strong><br/>
                   <hr style="margin: 4px 0; border: 0; border-top: 1px solid #e2e8f0;"/>
-                  <b>Erosion Risk:</b> ${Math.max(0, pctRisk)}%<br/>
-                  <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
-                  <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
+                  <b>Erosion Risk:</b> ${Math.max(0, parseFloat(pctRisk))}%<br/>
+                  <b>NDVI Matrix:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
+                  <b>Max Wind Gust:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
                   <b>Temperature:</b> ${parseFloat(feature.properties.temp || 0).toFixed(1)} °C
                 </div>
               `);
