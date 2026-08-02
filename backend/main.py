@@ -141,7 +141,9 @@ def _calculate_weighted_risk(grid_cells):
     return float((mean_risk * 0.6) + (top_90th_risk * 0.4))
 
 
-# --- HISTORICAL ANALYSIS ---
+# =========================================================================
+# --- 1. HISTORICAL ANALYSIS ENDPOINT ---
+# =========================================================================
 @app.post("/analyze")
 async def analyze(
     data: AnalysisRequest,
@@ -167,7 +169,8 @@ def _analyze_sync(data: AnalysisRequest):
         return {"error": f"Нет данных для периода {actual_start} → {actual_end}"}
 
     overall_risk = _calculate_weighted_risk(grid_cells)
-    hotspots = calculate_hotspots(grid_cells, risk_threshold=0.25, min_size=2)
+    
+    hotspots = calculate_hotspots(grid_cells, min_size=2)
 
     return {
         "polygon":     data.geometry.coordinates,
@@ -184,7 +187,9 @@ def _analyze_sync(data: AnalysisRequest):
     }
 
 
-# --- 10-DAY FORECAST ---
+# =========================================================================
+# --- 2. 10-DAY FORECAST ENDPOINT ---
+# =========================================================================
 @app.post("/analyze/short")
 async def forecast_short(
     data: AnalysisRequest,
@@ -207,13 +212,17 @@ def short_forecast_sync(data: AnalysisRequest):
     forecast_from = today.strftime("%Y-%m-%d")
     forecast_to   = (today + timedelta(days=10)).strftime("%Y-%m-%d")
 
-    grid_cells = prediction_grid(polygon, actual_start, actual_end, resolution_km=resolution)
+    try:
+        grid_cells = prediction_grid(polygon, actual_start, actual_end, resolution_km=resolution)
+    except Exception as e:
+        return {"error": str(e)}
 
     if not grid_cells:
         return {"error": f"Нет данных для периода {actual_start} → {actual_end}"}
 
     overall_risk = _calculate_weighted_risk(grid_cells)
-    hotspots = calculate_hotspots(grid_cells, risk_threshold=0.25, min_size=2)
+    
+    hotspots = calculate_hotspots(grid_cells, min_size=2)
 
     return {
         "polygon":       data.geometry.coordinates,
@@ -235,7 +244,9 @@ def short_forecast_sync(data: AnalysisRequest):
     }
 
 
-# --- 2040-2050 CLIMATE PREDICTION (SSP5-8.5) ---
+# =========================================================================
+# --- 3. 2040-2050 CLIMATE PREDICTION (SSP5-8.5) ENDPOINT ---
+# =========================================================================
 @app.post("/analyze/climate")
 async def forecast_climate(
     data: AnalysisRequest,
@@ -260,14 +271,24 @@ def _climate_forecast_sync(data: AnalysisRequest):
         month = 6  
 
     resolution = RESOLUTION
-    grid_climate = prediction_future_grid(polygon, month=month, resolution_km=resolution)
+    try:
+        grid_climate = prediction_future_grid(polygon, month=month, resolution_km=resolution)
+    except Exception as e:
+        return {"error": str(e)}
 
     if not grid_climate:
         return {"error": "Failed to generate climate forecast for this region."}
 
+    
+    for cell in grid_climate:
+        if "raw_ndvi" in cell:
+            cell["ndvi"] = cell["raw_ndvi"]
+            cell["wind"] = cell["raw_wind"]
+            cell["temp"] = cell["raw_temp"]
+
     future_risk = _calculate_weighted_risk(grid_climate)
 
-    hotspots = calculate_hotspots(grid_climate, risk_threshold=0.25, min_size=2)
+    hotspots = calculate_hotspots(grid_climate, min_size=2)
 
     result = {
         "polygon":     data.geometry.coordinates,
@@ -288,6 +309,7 @@ def _climate_forecast_sync(data: AnalysisRequest):
         
     climate_cache[cache_key] = result
     return result
+
 
 
 @app.get("/analyze/status/{job_id}")
