@@ -4,14 +4,14 @@ export function ControlPanel({ onRunAnalysis, loading, polygon }) {
   const [startDate, setStartDate] = useState("2024-01-01");
   const [endDate, setEndDate] = useState("2024-12-31");
   const [analysisType, setAnalysisType] = useState("historical"); 
-  
+
   const handleTypeChange = (e) => {
     const newType = e.target.value;
     setAnalysisType(newType);
 
     if (newType === "climate") {
-      setStartDate("2040-01-01");
-      setEndDate("2050-12-31");
+      setStartDate("2045-01-01");
+      setEndDate("2047-12-31");
     } else if (newType === "historical") {
       setStartDate("2024-01-01");
       setEndDate("2024-12-31");
