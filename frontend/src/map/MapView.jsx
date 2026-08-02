@@ -52,7 +52,7 @@ export default function MapView({ analysis, setPolygon }) {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
     const risks = analysis.grid
-      .map((cell) => cell.risk)
+      .map((cell) => (cell.risk > 1 ? cell.risk / 100 : cell.risk))
       .filter((r) => r !== undefined && !isNaN(r));
 
     const minRisk = risks.length > 0 ? Math.min(...risks) : 0;
@@ -62,12 +62,11 @@ export default function MapView({ analysis, setPolygon }) {
     const features = analysis.grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
-        // Зафиксированный шаг без деления на Math.cos(rad) и без умножения на 1.05
-        const step = cell.step_deg || 0.09;
+        const step = (cell.step_deg || 0.09) * 1.02;
         const halfStep = step / 2;
 
-        const normalizedRisk =
-          range > 0.01 ? (cell.risk - minRisk) / range : cell.risk;
+        const rawRisk = cell.risk > 1 ? cell.risk / 100 : cell.risk;
+        const normalizedRisk = range > 0.01 ? (rawRisk - minRisk) / range : rawRisk;
 
         return {
           type: "Feature",
@@ -100,7 +99,7 @@ export default function MapView({ analysis, setPolygon }) {
       <MapContainer
         center={[48.0196, 66.9237]}
         zoom={5}
-        style={{ height: "100%", width: "100%" }}
+        style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         zoomControl={true}
       >
         <TileLayer
@@ -134,9 +133,10 @@ export default function MapView({ analysis, setPolygon }) {
             data={geoJsonData}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.85,
-              stroke: false,
-              weight: 0,
+              fillOpacity: 0.9,
+              stroke: false,  
+              weight: 0,      
+              color: "transparent",
             })}
           />
         )}
