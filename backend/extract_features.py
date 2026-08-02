@@ -191,24 +191,27 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
 
     cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
-            .filterDate("2044-06-01", "2046-08-31") \
+            .filterDate("2040-06-01", "2050-08-31") \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
             .filter(ee.Filter.eq('model', 'ACCESS-CM2')) \
             .mean()
 
     tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
-    rain_future = cmip.select('pr').multiply(86400).rename("rain")
+    rain_future = cmip.select('pr').multiply(86400).rename("rain")  
     wind_future = cmip.select('sfcWind').rename("wind_mean")
-    moisture_future = cmip.select('hurs').rename("soil_moisture")
+    
+    moisture_future = cmip.select('hurs').divide(100.0).multiply(0.25).rename("soil_moisture")
+
+    ndvi_future = raw_data["ndvi"].multiply(0.70).rename("NDVI_now")
 
     stacked = ee.Image.cat([
-        raw_data["ndvi"].rename("NDVI_now"),
+        ndvi_future,  
         wind_future,
-        raw_data["wind_max"].rename("wind_max"),
+        raw_data["wind_max"].multiply(1.20).rename("wind_max"), 
         rain_future,
         tempC_future,
         moisture_future,
-        raw_data["evaporation"].rename("evaporation"),
+        raw_data["evaporation"].multiply(1.35).rename("evaporation"), 
         raw_data["slope"].rename("slope"),
         raw_data["soil_type"].rename("soil_type"),
         raw_data["biome"].rename("biome")
@@ -262,12 +265,11 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         grid_meta.append({
             "i": props.get("i", 0),
             "j": props.get("j", 0),
-            "lat": latitude,"lon": longitude,
+            "lat": latitude, "lon": longitude,
             "step_deg": resolution_km / 111.0
         })
             
     if not rows:
         return [], []
-
-    df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)       
-    return scaler.transform(df), grid_meta
+        
+    return rows, grid_meta

@@ -2,6 +2,7 @@ import os
 import ee
 import asyncio
 import uuid 
+import numpy as np
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,7 @@ from predictor import prediction_grid, prediction_future_grid, get_feature_impor
 from grid import calculate_hotspots 
 from gee_service import resolve_dates
 
+# Инициализация Earth Engine
 try:
     service_account = os.getenv("GEE_SERVICE_ACCOUNT")
     private_key     = os.getenv("GEE_PRIVATE_KEY")
@@ -30,7 +32,7 @@ except Exception:
     ee.Authenticate()
     ee.Initialize()
 
-app = FastAPI()
+app = FastAPI(title="WindGuard API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,9 +48,9 @@ MAX_JOBS = 50
 RESOLUTION = 10
 GEE_TIMEOUT_SECONDS = 60 
 
-
 jobs_lock = asyncio.Lock()
 analysis_semaphore = asyncio.Semaphore(2)
+
 
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -125,6 +127,20 @@ async def run_job(job_id: str, func, data):
         finally:
             asyncio.create_task(cleanup_job(job_id))
 
+
+def _calculate_weighted_risk(grid_cells):
+    if not grid_cells:
+        return 0.0
+    risks = [p.get("risk", 0.0) for p in grid_cells if p.get("risk") is not None]
+    if not risks:
+        return 0.0
+        
+    mean_risk = sum(risks) / len(risks)
+    top_90th_risk = float(np.percentile(risks, 90))
+    
+    return float((mean_risk * 0.6) + (top_90th_risk * 0.4))
+
+
 # --- HISTORICAL ANALYSIS ---
 @app.post("/analyze")
 async def analyze(
@@ -150,23 +166,22 @@ def _analyze_sync(data: AnalysisRequest):
     if not grid_cells:
         return {"error": f"Нет данных для периода {actual_start} → {actual_end}"}
 
-    avg_risk = sum(p["risk"] for p in grid_cells) / len(grid_cells)
-    hotspots = calculate_hotspots(grid_cells, risk_threshold=0.7, min_size=3)
+    overall_risk = _calculate_weighted_risk(grid_cells)
+    hotspots = calculate_hotspots(grid_cells, risk_threshold=0.25, min_size=2)
 
     return {
-        "polygon":    data.geometry.coordinates,
-        "grid":       grid_cells,  
-        "risk_score": round(avg_risk, 4),
-        "hotspots":   hotspots,  
+        "polygon":     data.geometry.coordinates,
+        "grid":        grid_cells,  
+        "risk_score":  round(overall_risk, 4),
+        "hotspots":    hotspots,  
         "feature_importances": get_feature_importance(),
         "context": {
-            "risk_score": round(avg_risk, 4),
+            "risk_score": round(overall_risk, 4),
             "start_date": actual_start,
             "end_date":   actual_end,
             "forecast":   is_forecast
         }
     }
-
 
 
 # --- 10-DAY FORECAST ---
@@ -197,21 +212,21 @@ def short_forecast_sync(data: AnalysisRequest):
     if not grid_cells:
         return {"error": f"Нет данных для периода {actual_start} → {actual_end}"}
 
-    avg_risk = sum(p["risk"] for p in grid_cells) / len(grid_cells)
-    hotspots = calculate_hotspots(grid_cells, risk_threshold=0.7, min_size=3)
+    overall_risk = _calculate_weighted_risk(grid_cells)
+    hotspots = calculate_hotspots(grid_cells, risk_threshold=0.25, min_size=2)
 
     return {
         "polygon":       data.geometry.coordinates,
         "grid":          grid_cells, 
-        "risk_score":    round(avg_risk, 4),
+        "risk_score":    round(overall_risk, 4),
         "hotspots":      hotspots,
         "forecast_type": "10-day",
         "is_forecast":   True,
-        "note":          "Forecast based on same period last year",
+        "note":          "Forecast based on satellite baseline & trend modeling",
         "period":        f"{forecast_from} to {forecast_to}",
         "feature_importances": get_feature_importance(),
         "context": {
-            "risk_score":    round(avg_risk, 4),
+            "risk_score":    round(overall_risk, 4),
             "start_date":    actual_start,
             "end_date":      actual_end,
             "forecast_from": forecast_from,
@@ -220,7 +235,7 @@ def short_forecast_sync(data: AnalysisRequest):
     }
 
 
-# --- 2040-2050 CLIMATE PREDICTION ---
+# --- 2040-2050 CLIMATE PREDICTION (SSP5-8.5) ---
 @app.post("/analyze/climate")
 async def forecast_climate(
     data: AnalysisRequest,
@@ -250,8 +265,9 @@ def _climate_forecast_sync(data: AnalysisRequest):
     if not grid_climate:
         return {"error": "Failed to generate climate forecast for this region."}
 
-    future_risk = sum(p["risk"] for p in grid_climate) / len(grid_climate)
-    hotspots = calculate_hotspots(grid_climate, risk_threshold=0.7, min_size=3)
+    future_risk = _calculate_weighted_risk(grid_climate)
+
+    hotspots = calculate_hotspots(grid_climate, risk_threshold=0.25, min_size=2)
 
     result = {
         "polygon":     data.geometry.coordinates,
@@ -263,9 +279,9 @@ def _climate_forecast_sync(data: AnalysisRequest):
         "is_forecast": True,
         "feature_importances": get_feature_importance(),
         "context": {
-            "risk_score": round(future_risk, 4),
-            "scenario":   "SSP5-8.5 (worst case)",
-            "period":     "2050",
+            "risk_score":     round(future_risk, 4),
+            "scenario":       "SSP5-8.5 (worst case)",
+            "period":         "2040-2050",
             "hotspots_found": len(hotspots)
         }
     }
@@ -276,7 +292,6 @@ def _climate_forecast_sync(data: AnalysisRequest):
 
 @app.get("/analyze/status/{job_id}")
 async def get_status(job_id: str):
-
     async with jobs_lock:
         job = jobs.get(job_id)
 
