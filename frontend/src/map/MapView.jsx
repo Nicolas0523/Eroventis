@@ -141,7 +141,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={canvasRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.52,  // МӨЛДІРЛІК ТҮСТІҢ ТЕКСТУРАСЫН АШАДЫ (Ескісі 0.95 болған)
+              fillOpacity: 0,  
               stroke: false,
               weight: 0,
               color: "transparent",
