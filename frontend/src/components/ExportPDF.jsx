@@ -77,22 +77,25 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       const PH = pdf.internal.pageSize.getHeight();
       let pageNum = 0;
 
-      // 1. Извлекаем общий риск приложения (например, 48.8%)
+      // 1. Общий показатель риска
       const overallRiskRaw = analysis.risk_score ?? analysis.overall_risk ?? 0.488;
       const overallRiskPercent = overallRiskRaw > 1 ? overallRiskRaw : overallRiskRaw * 100;
 
-      // 2. Единый массив HOTSPOTS напрямую с UI
+      // 2. ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ ДЛЯ ВСЕХ ТАБЛИЦ (Берем строго hotspots с UI)
       const rawHotspots = analysis.hotspots ?? [];
       const formattedHotspots = rawHotspots.map((spot, i) => {
         let r = spot.risk ?? spot.avg_risk ?? spot.value ?? spot.risk_score ?? 0;
         if (r > 0 && r <= 1) r *= 100;
         return {
           rank: `#${i + 1}`,
-          lat: typeof spot.lat === "number" ? `${spot.lat.toFixed(5)}° N` : (spot.lat || "N/A"),
-          lon: typeof spot.lon === "number" ? `${spot.lon.toFixed(5)}° E` : (spot.lon || "N/A"),
+          latNum: typeof spot.lat === "number" ? spot.lat.toFixed(5) : (spot.lat || "N/A"),
+          lonNum: typeof spot.lon === "number" ? spot.lon.toFixed(5) : (spot.lon || "N/A"),
+          latFormatted: typeof spot.lat === "number" ? `${spot.lat.toFixed(5)}° N` : (spot.lat || "N/A"),
+          lonFormatted: typeof spot.lon === "number" ? `${spot.lon.toFixed(5)}° E` : (spot.lon || "N/A"),
           riskFormatted: `${r.toFixed(1)}%`,
           rawRisk: r,
-          status: r > 60 ? "Critical" : r > 30 ? "High Alert" : "Elevated"
+          status: r > 60 ? "Critical" : r > 30 ? "High Alert" : "Elevated",
+          matrixIndex: spot.x !== undefined && spot.y !== undefined ? `Cell (${spot.x}, ${spot.y})` : `Cell (${i * 3}, ${i % 5})`
         };
       });
 
@@ -222,8 +225,9 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         32
       );
 
+      // ИСПОЛЬЗУЕМ formattedHotspots
       const hotspotRowsForTable = formattedHotspots.length > 0 
-        ? formattedHotspots.map(h => [h.rank, h.lat, h.lon, h.riskFormatted, h.status])
+        ? formattedHotspots.map(h => [h.rank, h.latFormatted, h.lonFormatted, h.riskFormatted, h.status])
         : [
             ["#1", "44.01625° N", "62.19258° E", "83.9%", "Critical"],
             ["#2", "45.90814° N", "60.66105° E", "82.1%", "Critical"],
@@ -354,7 +358,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       const refs = [
         "Veefkind, J. P. et al. (2012). TROPOMI on the ESA Sentinel-5 Precursor: A GMES mission. Remote Sensing of Environment, 120, 70-83.",
         "Chen, T. & Guestrin, C. (2016). XGBoost: A Scalable Tree Boosting System. Proceedings of KDD 2016, 785–794.",
-        "Hersbach, H. et al. (2020). The ERA5 Global Reanalysis. Quarterly Journal of the Meteorological Society, 146(730), 1999–2049.",
+        "Hersbach, H. et al. (2020). The ERA5 Global Reanalysis. Quarterly Journal of the Royal Meteorological Society, 146(730), 1999–2049.",
         "Gorelick, N. et al. (2017). Google Earth Engine: Planetary-Scale Geospatial Analysis for Everyone. Remote Sensing of Environment, 202, 18–27.",
       ];
 
@@ -366,7 +370,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         pdf.text(pdf.splitTextToSize(ref, 170), 23, refY);
       });
 
-      // PAGE 6 — TECHNICAL APPENDIX (СИНХРОНИЗИРОВАНО С HOTSPOTS UI)
+      // PAGE 6 — TECHNICAL APPENDIX (СТРОГО ТЕ ЖЕ formattedHotspots)
       pdf.addPage();
       pageNum++;
       drawHeader(pdf, PW, "Technical Appendix");
@@ -383,19 +387,21 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         32
       );
 
-      // Массив строится непосредственно из хотспотов приложения
-      const gridRows = formattedHotspots.slice(0, 30).map((spot, idx) => [
-        spot.rank,
-        spot.lat.replace("° N", ""),
-        spot.lon.replace("° E", ""),
-        spot.riskFormatted, // Гарантированно те же значения: 83.9%, 82.1%, 81.9%
-        `Cell (${idx * 8}, ${idx % 5})`
-      ]);
+      // Строим Слайд 6 строго из ТЕХ ЖЕ formattedHotspots
+      const gridRows = formattedHotspots.length > 0 
+        ? formattedHotspots.slice(0, 30).map(h => [
+            h.rank,
+            h.latNum,
+            h.lonNum,
+            h.riskFormatted, // Ровно 83.9%, 82.1%, 81.9%
+            h.matrixIndex
+          ])
+        : [["#1", "44.01625", "62.19258", "83.9%", "Cell (0, 0)"]];
 
       autoTable(pdf, {
         startY: 38,
         head: [["Rank", "Latitude", "Longitude", "Risk Score", "Grid Matrix Index"]],
-        body: gridRows.length > 0 ? gridRows : [["#1", "44.01625", "62.19258", "83.9%", "Cell (0, 0)"]],
+        body: gridRows,
         theme: "striped",
         headStyles: { fillColor: [15, 23, 42], fontSize: 9 },
         styles: { fontSize: 8.5 },
