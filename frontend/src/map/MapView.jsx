@@ -48,7 +48,6 @@ export default function MapView({ analysis, setPolygon }) {
     setPolygon(null);
   };
 
-  // Преобразуем сетку в единый GeoJSON объект без нахлестов
   const geoJsonData = useMemo(() => {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
@@ -63,13 +62,9 @@ export default function MapView({ analysis, setPolygon }) {
     const features = analysis.grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
-        // Вычисляем точный шаг без умножения на 1.05
-        const latStep = cell.step_deg || 10 / 111.0;
-        const rad = (cell.lat * Math.PI) / 180;
-        const lonStep = latStep / Math.max(Math.cos(rad), 0.1);
-
-        const halfLat = latStep / 2;
-        const halfLon = lonStep / 2;
+        // Зафиксированный шаг без деления на Math.cos(rad) и без умножения на 1.05
+        const step = cell.step_deg || 0.09;
+        const halfStep = step / 2;
 
         const normalizedRisk =
           range > 0.01 ? (cell.risk - minRisk) / range : cell.risk;
@@ -83,11 +78,11 @@ export default function MapView({ analysis, setPolygon }) {
             type: "Polygon",
             coordinates: [
               [
-                [cell.lon - halfLon, cell.lat - halfLat],
-                [cell.lon + halfLon, cell.lat - halfLat],
-                [cell.lon + halfLon, cell.lat + halfLat],
-                [cell.lon - halfLon, cell.lat + halfLat],
-                [cell.lon - halfLon, cell.lat - halfLat],
+                [cell.lon - halfStep, cell.lat - halfStep],
+                [cell.lon + halfStep, cell.lat - halfStep],
+                [cell.lon + halfStep, cell.lat + halfStep],
+                [cell.lon - halfStep, cell.lat + halfStep],
+                [cell.lon - halfStep, cell.lat - halfStep],
               ],
             ],
           },
@@ -140,7 +135,7 @@ export default function MapView({ analysis, setPolygon }) {
             style={(feature) => ({
               fillColor: feature.properties.color,
               fillOpacity: 0.85,
-              stroke: false, // Убираем границы между ячейками
+              stroke: false,
               weight: 0,
             })}
           />
