@@ -198,8 +198,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
         cmip_coll = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
-            .filter(ee.Filter.calendarRange(2040, 2050, 'year')) \
-            .filter(ee.Filter.calendarRange(6, 8, 'month'))
+            .filter(ee.Filter.calendarRange(2045, 2047, 'year')) 
 
         def normalize_cmip_bands(img):
             t = img.select('tas').subtract(273.15).rename('tempC')
