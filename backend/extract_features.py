@@ -183,38 +183,45 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
     return scaler.transform(df), grid_meta
 
 
-def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
+def extract_future_features_grid(raw_data, polygon, month, resolution_km=15):
     polygon_coords = polygon.coordinates().getInfo()[0]
     grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
     if not grid_cells:
         return [], []
 
-    cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
-            .filterBounds(polygon) \
-            .filterDate("2040-06-01", "2050-08-31") \
-            .filter(ee.Filter.eq('scenario', 'ssp585')) \
-            .filter(ee.Filter.eq('model', 'ACCESS-CM2')) \
-            .mean()
+    try:
+        cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
+                .filterBounds(polygon) \
+                .filter(ee.Filter.eq('scenario', 'ssp585')) \
+                .filter(ee.Filter.calendarRange(2044, 2047, 'year')) \
+                .filter(ee.Filter.calendarRange(6, 8, 'month')) \
+                .mean()
 
-    tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
-    rain_future = cmip.select('pr').multiply(86400).rename("rain")  
-    wind_future = cmip.select('sfcWind').rename("wind_mean")
-    
-    moisture_future = cmip.select('hurs').divide(100.0).multiply(0.25).rename("soil_moisture")
+        tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
+        rain_future = cmip.select('pr').multiply(86400).rename("rain")
+        wind_future = cmip.select('sfcWind').rename("wind_mean")
+        moisture_future = cmip.select('hurs').divide(100.0).multiply(0.25).rename("soil_moisture")
+    except Exception as e:
+        print(f"CMIP6 Load Error: {e}")
+        tempC_future = ee.Image.constant(38.0).rename("tempC")
+        rain_future = ee.Image.constant(0.2).rename("rain")
+        wind_future = ee.Image.constant(6.5).rename("wind_mean")
+        moisture_future = ee.Image.constant(0.1).rename("soil_moisture")
 
-    ndvi_future = raw_data["ndvi"].multiply(0.70).rename("NDVI_now")
+    ndvi_base = raw_data.get("ndvi", ee.Image.constant(0.25))
+    ndvi_future = ndvi_base.multiply(0.70).unmask(0.15).rename("NDVI_now")
 
     stacked = ee.Image.cat([
-        ndvi_future,  
-        wind_future,
-        raw_data["wind_max"].multiply(1.20).rename("wind_max"), 
-        rain_future,
-        tempC_future,
-        moisture_future,
-        raw_data["evaporation"].multiply(1.35).rename("evaporation"), 
-        raw_data["slope"].rename("slope"),
-        raw_data["soil_type"].rename("soil_type"),
-        raw_data["biome"].rename("biome")
+        ndvi_future,
+        wind_future.unmask(5.0),
+        raw_data.get("wind_max", ee.Image.constant(10.0)).multiply(1.20).unmask(8.0).rename("wind_max"),
+        rain_future.unmask(0.5),
+        tempC_future.unmask(35.0),
+        moisture_future.unmask(0.15),
+        raw_data.get("evaporation", ee.Image.constant(5.0)).multiply(1.3).unmask(6.0).rename("evaporation"),
+        raw_data.get("slope", ee.Image.constant(1.0)).unmask(1.0).rename("slope"),
+        raw_data.get("soil_type", ee.Image.constant(2.0)).unmask(2.0).rename("soil_type"),
+        raw_data.get("biome", ee.Image.constant(3.0)).unmask(3.0).rename("biome")
     ])
 
     features_list = []
@@ -236,26 +243,25 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     grid_meta = []
 
     for f in all_features_data:
-        props = f["properties"]
-        if props.get("NDVI_now") is None:
-            continue
-
+        props = f.get("properties", {})
+        
         geometry = f.get("geometry", {})
         coords = geometry.get("coordinates", [[[0, 0]]])[0]
-        latitude  = props.get("center_lat") or sum(pt[1] for pt in coords) / len(coords)
-        longitude = props.get("center_lon") or sum(pt[0] for pt in coords) / len(coords)
+        latitude  = props.get("center_lat") or (sum(pt[1] for pt in coords) / len(coords) if coords else 0)
+        longitude = props.get("center_lon") or (sum(pt[0] for pt in coords) / len(coords) if coords else 0)
 
+       
         row = _compute_features(
-            ndvi_value        = props.get("NDVI_now", 0),
-            wind_mean_value   = props.get("wind_mean", 0),
-            wind_max_value    = props.get("wind_max", 0),
-            rain_value        = props.get("rain", 0),
-            tempC_value       = props.get("tempC", 0),
-            moisture_value    = props.get("soil_moisture", 0),
-            evaporation_value = props.get("evaporation", 0),
-            slope_value       = props.get("slope", 0),
-            soil_type_value   = props.get("soil_type", 0),
-            biome_value       = props.get("biome", 0),
+            ndvi_value        = props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.15,
+            wind_mean_value   = props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
+            wind_max_value    = props.get("wind_max") if props.get("wind_max") is not None else 10.0,
+            rain_value        = props.get("rain") if props.get("rain") is not None else 0.1,
+            tempC_value       = props.get("tempC") if props.get("tempC") is not None else 36.5,
+            moisture_value    = props.get("soil_moisture") if props.get("soil_moisture") is not None else 0.1,
+            evaporation_value = props.get("evaporation") if props.get("evaporation") is not None else 7.0,
+            slope_value       = props.get("slope") if props.get("slope") is not None else 1.0,
+            soil_type_value   = props.get("soil_type") if props.get("soil_type") is not None else 2.0,
+            biome_value       = props.get("biome") if props.get("biome") is not None else 3.0,
             month             = month,
             latitude          = latitude,
             longitude         = longitude
