@@ -8,7 +8,6 @@ import "leaflet-draw/dist/leaflet.draw.css";
 
 // ДИНАМИКАЛЫҚ ЖӘНЕ СЕЗІМТАЛ ПАЛИТРА: Төменгі деңгейдегі (0-15%) өзгерістерді керемет көрсетеді
 const getDynamicCommercialColor = (value) => {
-  // Күшейткіш коэффициент (gamma correction) — төменгі қауіптің өзін текстуралы градиентке айналдырады
   const t = Math.pow(Math.max(0, Math.min(1, value)), 0.6);
   let r, g, b;
 
@@ -61,21 +60,15 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       .map((cell) => {
         const step = (cell.step_deg || 0.09) * 1.05;
         const halfStep = step / 2;
-
         const rawRisk = cell.risk;
 
-        // =========================================================================
-        // МОДИФИКАЦИЯ: ПЕРЕХОД НА АБСОЛЮТНУЮ ФИЗИЧЕСКУЮ ШКАЛУ SP5 V5
-        // =========================================================================
-        // Делим на 2.0 (пиковый наблюдаемый индекс эрозии/пыли). 
-        // Все, что выше 2.0, принудительно ограничиваем 1.0 (максимальный красный цвет)
+        // Физическая шкала SP5 V5
         const normalizedRisk = Math.min(Math.max(rawRisk / 2.0, 0), 1);
-        // =========================================================================
 
         return {
           type: "Feature",
           properties: {
-            color: getDynamicCommercialColor(normalizedRisk), // Цвет теперь строго зависит от физического значения
+            color: getDynamicCommercialColor(normalizedRisk),
             raw_risk: rawRisk,
             ndvi: cell.ndvi,
             wind: cell.wind,
@@ -102,6 +95,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     };
   }, [analysis]);
 
+  // Уникальный ключ для ПРИНУДИТЕЛЬНОГО перерисовывания сетки рисков при смене типа/дат/данных
+  const geoJsonKey = useMemo(() => {
+    if (!analysis) return "no-data";
+    return `${analysis.analysis_type || "default"}_${analysis.start_date}_${analysis.end_date}_${analysis.grid?.length}_${Date.now()}`;
+  }, [analysis]);
+
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <MapContainer
@@ -111,6 +110,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         zoomControl={true}
       >
+        {/* ИСПРАВЛЕНИЕ 1: Возвращаем подложку карты (Dark Mode style) */}
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          maxZoom={19}
+        />
 
         <FeatureGroup>
           <EditControl
@@ -136,18 +141,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           />
         </FeatureGroup>
 
+        {/* ИСПРАВЛЕНИЕ 2: Динамический key заставляет React сбрасывать старый GeoJSON */}
         {geoJsonData && (
           <GeoJSON
-            key={JSON.stringify(analysis?.start_date || "grid")}
+            key={geoJsonKey}
             data={geoJsonData}
             renderer={canvasRenderer}
-            
-            options={{
-              stroke: false,
-              weight: 0,
-              color: "transparent"
-            }}
-            
             style={(feature) => ({
               fillColor: feature.properties.color,
               fillOpacity: 0.55,  
