@@ -6,37 +6,37 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// Функция расчета градиентного цвета с высоким контрастом
-const getHighContrastColor = (value) => {
-  const t = Math.max(0, Math.min(1, value));
+// ДИНАМИКАЛЫҚ ЖӘНЕ СЕЗІМТАЛ ПАЛИТРА: Төменгі деңгейдегі (0-15%) өзгерістерді керемет көрсетеді
+const getDynamicCommercialColor = (value) => {
+  // Күшейткіш коэффициент (gamma correction) — төменгі қауіптің өзін текстуралы градиентке айналдырады
+  const t = Math.pow(Math.max(0, Math.min(1, value)), 0.6);
   let r, g, b;
 
   if (t < 0.25) {
     const localT = t / 0.25;
-    r = Math.round(16 + (132 - 16) * localT);
-    g = Math.round(185 + (204 - 185) * localT);
-    b = Math.round(129 + (22 - 129) * localT);
+    r = Math.round(16 + (90 - 16) * localT);
+    g = Math.round(185 + (210 - 185) * localT);
+    b = Math.round(129 + (50 - 129) * localT);
   } else if (t < 0.5) {
     const localT = (t - 0.25) / 0.25;
-    r = Math.round(132 + (234 - 132) * localT);
-    g = Math.round(204 + (179 - 204) * localT);
-    b = Math.round(22 + (8 - 22) * localT);
+    r = Math.round(90 + (220 - 90) * localT);
+    g = Math.round(210 + (195 - 210) * localT);
+    b = Math.round(50 + (15 - 50) * localT);
   } else if (t < 0.75) {
     const localT = (t - 0.5) / 0.25;
-    r = Math.round(234 + (249 - 234) * localT);
-    g = Math.round(179 + (115 - 179) * localT);
-    b = Math.round(8 + (22 - 8) * localT);
+    r = Math.round(220 + (245 - 220) * localT);
+    g = Math.round(195 + (120 - 195) * localT);
+    b = Math.round(15 + (20 - 15) * localT);
   } else {
     const localT = (t - 0.75) / 0.25;
-    r = Math.round(249 + (239 - 249) * localT);
-    g = Math.round(115 + (68 - 115) * localT);
-    b = Math.round(22 + (68 - 22) * localT);
+    r = Math.round(245 + (239 - 245) * localT);
+    g = Math.round(120 + (68 - 120) * localT);
+    b = Math.round(20 + (68 - 20) * localT);
   }
 
   return `rgb(${r}, ${g}, ${b})`;
 };
 
-// Canvas Renderer для предотвращения появление швов рендеринга
 const canvasRenderer = L.canvas({ padding: 0.5 });
 
 export default function MapView({ analysis, setPolygon, mapRef }) {
@@ -56,8 +56,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
   const geoJsonData = useMemo(() => {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
+    // Жаңа v5 спутниктік таргет ауқымын таза анықтау (сырой risk талдауы)
     const risks = analysis.grid
-      .map((cell) => (cell.risk > 1 ? cell.risk / 100 : cell.risk))
+      .map((cell) => cell.risk)
       .filter((r) => r !== undefined && !isNaN(r));
 
     const minRisk = risks.length > 0 ? Math.min(...risks) : 0;
@@ -67,17 +68,20 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     const features = analysis.grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
-        // Добавляем минимальный множитель 1.05 для перекрытия micro-gaps
         const step = (cell.step_deg || 0.09) * 1.05;
         const halfStep = step / 2;
 
-        const rawRisk = cell.risk > 1 ? cell.risk / 100 : cell.risk;
-        const normalizedRisk = range > 0.01 ? (rawRisk - minRisk) / range : rawRisk;
+        const rawRisk = cell.risk;
+        const normalizedRisk = range > 0.001 ? (rawRisk - minRisk) / range : rawRisk;
 
         return {
           type: "Feature",
           properties: {
-            color: getHighContrastColor(normalizedRisk),
+            color: getDynamicCommercialColor(normalizedRisk),
+            raw_risk: rawRisk,
+            ndvi: cell.ndvi,
+            wind: cell.wind,
+            temp: cell.temp
           },
           geometry: {
             type: "Polygon",
@@ -120,11 +124,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             onCreated={_onCreate}
             onDeleted={_onDeleted}
             draw={{
-              rectangle: false,
-              circle: false,
-              circlemarker: false,
-              polyline: false,
-              marker: false,
+              rectangle: false, circle: false, circlemarker: false, polyline: false, marker: false,
               polygon: {
                 allowIntersection: false,
                 drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
@@ -141,11 +141,25 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={canvasRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.95,
+              fillOpacity: 0.52,  // МӨЛДІРЛІК ТҮСТІҢ ТЕКСТУРАСЫН АШАДЫ (Ескісі 0.95 болған)
               stroke: false,
               weight: 0,
               color: "transparent",
             })}
+            onEachFeature={(feature, layer) => {
+              // Спутниктік таргетті (0-2.0) процентке айналдырып Popup жасау
+              const pctRisk = ((feature.properties.raw_risk / 2.0) * 100).toFixed(1);
+              layer.bindPopup(`
+                <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
+                  <strong style="font-size: 12px; color: #0f172a;">Wind Erosion Details</strong><br/>
+                  <hr style="margin: 4px 0; border: 0; border-top: 1px solid #e2e8f0;"/>
+                  <b>Erosion Risk:</b> ${Math.max(0, pctRisk)}%<br/>
+                  <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
+                  <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
+                  <b>Temperature:</b> ${parseFloat(feature.properties.temp || 0).toFixed(1)} °C
+                </div>
+              `);
+            }}
           />
         )}
       </MapContainer>
