@@ -139,15 +139,21 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             key={JSON.stringify(analysis?.start_date || "grid")}
             data={geoJsonData}
             renderer={canvasRenderer}
+            
+            options={{
+              stroke: false,
+              weight: 0,
+              color: "transparent"
+            }}
+            
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.52,  
+              fillOpacity: 0.65,      
               stroke: false,         
               weight: 0,             
-              color: "transparent",  
+              color: "transparent"
             })}
             onEachFeature={(feature, layer) => {
-              // Спутниктік таргетті (0-2.0) процентке айналдырып Popup жасау
               const pctRisk = ((feature.properties.raw_risk / 2.0) * 100).toFixed(1);
               layer.bindPopup(`
                 <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
