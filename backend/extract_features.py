@@ -11,7 +11,6 @@ SCRIPT_DIR        = Path(__file__).resolve().parent
 ndvi_stats        = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
 ndvi_biome_stats  = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
 
-
 FEATURE_COLUMNS = [
     'NDVI_now', 'NDVI_anomaly', 'wind_mean', 'wind_max', 'rain', 'tempC', 
     'soil_moisture', 'evaporation', 'slope', 'soil_type', 'biome', 
@@ -19,39 +18,36 @@ FEATURE_COLUMNS = [
     'ndvi_zscore', 'ndvi_biome_anomaly'
 ]
 
-def _safe_float(val, default=0.0):
-    if val is None or np.isnan(val):
-        return float(default)
-    return float(val)
-
 def _compute_features(ndvi_value, wind_mean_value, wind_max_value,
                        rain_value, tempC_value, moisture_value,
                        evaporation_value, slope_value, soil_type_value,
                        biome_value, month, latitude, longitude):
 
-    ndvi_val = _safe_float(ndvi_value, 0.12)
-    wind_m = _safe_float(wind_mean_value, 5.0)
-    wind_max = _safe_float(wind_max_value, 10.0)
-    rain = _safe_float(rain_value, 0.1)
-    temp = _safe_float(tempC_value, 30.0)
-    moist = _safe_float(moisture_value, 0.15)
-    evap = _safe_float(evaporation_value, 5.0)
-    slope = _safe_float(slope_value, 1.0)
-    soil = _safe_float(soil_type_value, 2.0)
-    biome = _safe_float(biome_value, 3.0)
+    # ЧЕСТНЫЙ ПОДХОД: Никаких дефолтных 30.0°C или 0.12 NDVI. 
+    # Приводим к float только реальные значения, иначе NaN
+    ndvi_val = float(ndvi_value) if ndvi_value is not None and not np.isnan(ndvi_value) else np.nan
+    wind_m   = float(wind_mean_value) if wind_mean_value is not None and not np.isnan(wind_mean_value) else np.nan
+    wind_max = float(wind_max_value) if wind_max_value is not None and not np.isnan(wind_max_value) else np.nan
+    rain     = float(rain_value) if rain_value is not None and not np.isnan(rain_value) else np.nan
+    temp     = float(tempC_value) if tempC_value is not None and not np.isnan(tempC_value) else np.nan
+    moist    = float(moisture_value) if moisture_value is not None and not np.isnan(moisture_value) else np.nan
+    evap     = float(evaporation_value) if evaporation_value is not None and not np.isnan(evaporation_value) else np.nan
+    slope    = float(slope_value) if slope_value is not None and not np.isnan(slope_value) else np.nan
+    soil     = float(soil_type_value) if soil_type_value is not None and not np.isnan(soil_type_value) else np.nan
+    biome    = float(biome_value) if biome_value is not None and not np.isnan(biome_value) else np.nan
 
     month_key = float(month)
     ndvi_mean = ndvi_stats['mean'].get(month_key, 0.15)
     ndvi_std  = ndvi_stats['std'].get(month_key, 1.0)
 
-    ndvi_anomaly_value = ndvi_val - ndvi_mean
-    aridity_index      = rain / (abs(evap) + 1e-9)
+    ndvi_anomaly_value = ndvi_val - ndvi_mean if not np.isnan(ndvi_val) else np.nan
+    aridity_index      = rain / (abs(evap) + 1e-9) if not (np.isnan(rain) or np.isnan(evap)) else np.nan
     is_dry_season      = 1 if month in [6, 7, 8, 9] else 0 
-    ndvi_zscore        = (ndvi_val - ndvi_mean) / (ndvi_std + 1e-9)
+    ndvi_zscore        = (ndvi_val - ndvi_mean) / (ndvi_std + 1e-9) if not np.isnan(ndvi_val) else np.nan
 
-    biome_key          = (int(biome), month_key) if biome else None
-    biome_mean         = ndvi_biome_stats.get(biome_key, ndvi_mean)
-    ndvi_biome_anomaly = ndvi_val - biome_mean
+    biome_key          = (int(biome), month_key) if not np.isnan(biome) else None
+    biome_mean         = ndvi_biome_stats.get(biome_key, ndvi_mean) if biome_key else ndvi_mean
+    ndvi_biome_anomaly = ndvi_val - biome_mean if not np.isnan(ndvi_val) else np.nan
 
     return [
         ndvi_val, ndvi_anomaly_value, wind_m, wind_max,
@@ -85,7 +81,7 @@ def extract_features(raw_data, polygon, month):
 
     wind_max_val = (raw_data["wind_max"].reduceRegion(
         reducer=ee.Reducer.max(), geometry=polygon, scale=1000, bestEffort=True
-    ).getInfo() or {}).get("wind_max", 10.0)
+    ).getInfo() or {}).get("wind_max")
 
     coords = polygon.centroid(maxError=1).coordinates().getInfo()
 
@@ -105,7 +101,9 @@ def extract_features(raw_data, polygon, month):
         longitude         = coords[0],
     )
 
-    df = pd.DataFrame([raw], columns=FEATURE_COLUMNS).fillna(0.0)
+    df = pd.DataFrame([raw], columns=FEATURE_COLUMNS)
+   
+    df = df.fillna(0.0)
     return scaler.transform(df), coords
 
 
@@ -178,9 +176,9 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
             "lat": latitude,
             "lon": longitude,
             "step_deg": resolution_km / 111.0,
-            "raw_ndvi": _safe_float(props.get("NDVI_now"), 0.12),
-            "raw_wind": _safe_float(props.get("wind_max"), 10.0), 
-            "raw_temp": _safe_float(props.get("tempC"), 30.0)
+            "raw_ndvi": props.get("NDVI_now"), 
+            "raw_wind": props.get("wind_max"), 
+            "raw_temp": props.get("tempC")     
         })
 
     if not rows:
@@ -209,7 +207,8 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     wind_future = cmip.select('sfcWind').rename("wind_mean")
     moisture_future = cmip.select('hurs').divide(100.0).rename("soil_moisture")
 
-    ndvi_layer = raw_data["ndvi"].unmask(0.12).rename("NDVI_now")
+
+    ndvi_layer = raw_data["ndvi"].rename("NDVI_now")
 
     stacked = ee.Image.cat([
         ndvi_layer,
@@ -273,9 +272,9 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "lat": latitude,
             "lon": longitude,
             "step_deg": resolution_km / 111.0,
-            "raw_ndvi": _safe_float(props.get("NDVI_now"), 0.12),
-            "raw_wind": _safe_float(props.get("wind_mean"), 5.0),
-            "raw_temp": _safe_float(props.get("tempC"), 30.0)
+            "raw_ndvi": props.get("NDVI_now"),
+            "raw_wind": props.get("wind_mean"),
+            "raw_temp": props.get("tempC")
         })
             
     if not rows:
