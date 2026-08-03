@@ -91,6 +91,9 @@ def prediction_future_grid(polygon, month, resolution_km=10):
     if len(scaled) == 0: 
         return []
 
+    print("SCALED FEATURES CHECK:", scaled_features)
+    print("RAW PREDS:", raw_result)
+
     raw_preds = ml_model.predict(scaled)
     calibrated_preds = raw_preds + bias_shift
     
