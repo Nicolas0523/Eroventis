@@ -184,21 +184,23 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     if not grid_cells:
         return [], []
 
-    # Фильтр CMIP6 по конкретной модели ACCESS-CM2
+
     cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
-            .filterDate("2044-06-01", "2046-08-31") \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
-            .filter(ee.Filter.eq('model', 'ACCESS-CM2')) \
+            .filter(ee.Filter.calendarRange(2040, 2050, "year")) \
+            .filter(ee.Filter.calendarRange(6, 8, "month")) \
             .mean()
 
     tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
     rain_future = cmip.select('pr').multiply(86400).rename("rain")
     wind_future = cmip.select('sfcWind').rename("wind_mean")
-    moisture_future = cmip.select('hurs').rename("soil_moisture")
+    
 
-    # ИСПРАВЛЕНИЕ: unmask(0.20) гарантирует, что NDVI не вернет None!
-    ndvi_layer = raw_data["ndvi"].unmask(0.20).rename("NDVI_now")
+    moisture_future = cmip.select('hurs').divide(100.0).rename("soil_moisture")
+
+
+    ndvi_layer = raw_data["ndvi"].unmask(0.12).rename("NDVI_now")
 
     stacked = ee.Image.cat([
         ndvi_layer,
@@ -234,10 +236,9 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     for f in all_features_data:
         props = f.get("properties", {})
         
-        # Берем NDVI или fallback 0.20 вместо отсечения через continue!
         ndvi_val = props.get("NDVI_now")
-        if ndvi_val is None:
-            ndvi_val = 0.20
+        if ndvi_val is None or ndvi_val == 0:
+            ndvi_val = 0.12 
 
         geometry = f.get("geometry", {})
         coords = geometry.get("coordinates", [[[0, 0]]])[0]
@@ -246,12 +247,12 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
 
         row = _compute_features(
             ndvi_value        = ndvi_val,
-            wind_mean_value   = props.get("wind_mean", 5.0),
-            wind_max_value    = props.get("wind_max", 10.0),
-            rain_value        = props.get("rain", 0.5),
-            tempC_value       = props.get("tempC", 30.0),
-            moisture_value    = props.get("soil_moisture", 30.0),
-            evaporation_value = props.get("evaporation", 5.0),
+            wind_mean_value   = props.get("wind_mean", 6.5),
+            wind_max_value    = props.get("wind_max", 12.0),
+            rain_value        = props.get("rain", 0.1),
+            tempC_value       = props.get("tempC", 38.0),
+            moisture_value    = props.get("soil_moisture", 0.15), 
+            evaporation_value = props.get("evaporation", 7.5),
             slope_value       = props.get("slope", 1.0),
             soil_type_value   = props.get("soil_type", 2.0),
             biome_value       = props.get("biome", 3.0),
@@ -268,8 +269,8 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "lon": longitude,
             "step_deg": resolution_km / 111.0,
             "raw_ndvi": ndvi_val,
-            "raw_wind": props.get("wind_mean", 5.0),
-            "raw_temp": props.get("tempC", 30.0)
+            "raw_wind": props.get("wind_mean", 6.5),
+            "raw_temp": props.get("tempC", 38.0)
         })
             
     if not rows:
