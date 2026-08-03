@@ -209,17 +209,17 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     tempC_future    = cmip.select('tas').subtract(273.15).rename("tempC")
     rain_future     = cmip.select('pr').multiply(86400).rename("rain")
     wind_future     = cmip.select('sfcWind').rename("wind_mean")
-    moisture_future = cmip.select('hurs').divide(100.0).rename("soil_moisture")
 
     ndvi_layer = raw_data["ndvi"].rename("NDVI_now")
 
+    # Исправленный стек для климатического прогноза (без hurs, с правильным wind_max и soil_moisture из ERA5)
     stacked = ee.Image.cat([
         ndvi_layer,
         wind_future,
-        raw_data["wind_max"].rename("wind_max"),
+        wind_future.multiply(1.3).rename("wind_max"),
         rain_future,
         tempC_future,
-        moisture_future,
+        raw_data["soil_moisture"].rename("soil_moisture"),
         raw_data["evaporation"].rename("evaporation"),
         raw_data["slope"].rename("slope"),
         raw_data["soil_type"].rename("soil_type"),
@@ -238,8 +238,9 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         }))
     
     fc = ee.FeatureCollection(features_list)
-    # Ставим стабильный масштабирующий коэффициент для CMIP6
-    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=25000)
+    
+    # Исправленный масштаб на 10000 вместо 25000 для точности сетки 10км
+    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=10000)
     all_features_data = reduced_fc.getInfo().get("features", [])
 
     rows = []
