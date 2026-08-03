@@ -179,19 +179,13 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
 
 
 def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
-    """
-    Вычисление CMIP6 с сохранением STRICT 10x10 km сетки (3000+ ячеек)
-    через молниеносную выборку по центроидам ячеек (Points Reduction).
-    """
+
     polygon_coords = polygon.coordinates().getInfo()[0]
-    
-    # Строго 10 км
     grid_cells = create_grid(polygon_coords, resolution_km=10)
     if not grid_cells:
         return [], []
 
     try:
-        # 1. Загружаем и чистим CMIP6 (только 3 универсальных бенда)
         cmip_coll = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
@@ -204,11 +198,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         tempC_future = cmip_mean.select('tas').subtract(273.15).rename('tempC')
         rain_future = cmip_mean.select('pr').multiply(86400).rename('rain')
         wind_future = cmip_mean.select('sfcWind').rename('wind_mean')
-        
-        moisture_future = raw_data.get(
-            "soil_moisture", 
-            ee.Image.constant(0.12)
-        ).rename('soil_moisture')
+        moisture_future = raw_data.get("soil_moisture", ee.Image.constant(0.12)).rename('soil_moisture')
 
     except Exception as e:
         print(f"[CMIP6 Fallback]: {e}")
@@ -217,16 +207,13 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         wind_future = raw_data.get("wind_mean", ee.Image.constant(5.0)).rename('wind_mean')
         moisture_future = raw_data.get("soil_moisture", ee.Image.constant(0.2)).rename('soil_moisture')
 
-    # Текущие базовые данные
     ndvi_future = raw_data["ndvi"].resample("bilinear").rename("NDVI_now").unmask(0.20)
     wind_max = wind_future.rename("wind_max")
 
-    # Статические гео-данные
     real_slope = ee.Terrain.slope(ee.Image("USGS/SRTMGL1_003")).rename('slope')
     real_soil  = ee.Image("OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02").select('b0').rename('soil_type')
     evaporation_future = raw_data.get("evaporation", ee.Image.constant(5.5)).rename("evaporation")
 
-    # Собираем многоканальный растр
     stacked = ee.Image.cat([
         ndvi_future,
         wind_future.unmask(5.0),
@@ -240,7 +227,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         raw_data.get("biome", ee.Image.constant(3.0)).unmask(3.0).rename("biome")
     ])
 
-    # 2. ОПТИМИЗАЦИЯ: Создаем FeatureCollection из ТОЧЕК (центроидов), а не полигонов
+
     features_list = []
     for idx, cell in enumerate(grid_cells):
         point_geom = ee.Geometry.Point([cell["center_lon"], cell["center_lat"]])
@@ -252,17 +239,20 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "center_lon": cell["center_lon"]
         }))
 
-    fc = ee.FeatureCollection(features_list)
+   
+    batch_size = 400
+    all_features_data = []
 
-    # 3. Выборка значений с растра в точках через reduceRegions (scale=5000)
-    # Считать точки для GEE — мгновенная операция!
-    reduced_fc = stacked.reduceRegions(
-        collection=fc, 
-        reducer=ee.Reducer.first(), # Забираем значение пикселя в центре ячейки
-        scale=5000
-    )
-    
-    all_features_data = reduced_fc.getInfo()["features"]
+    for k in range(0, len(features_list), batch_size):
+        batch = features_list[k : k + batch_size]
+        fc_batch = ee.FeatureCollection(batch)
+        reduced_batch = stacked.reduceRegions(
+            collection=fc_batch, 
+            reducer=ee.Reducer.first(),
+            scale=5000
+        )
+
+        all_features_data.extend(reduced_batch.getInfo()["features"])
 
     rows = []
     grid_meta = []
@@ -295,7 +285,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "j": props.get("j", 0),
             "lat": latitude,
             "lon": longitude,
-            "step_deg": 10 / 111.0, # Ровно 10 км
+            "step_deg": 10 / 111.0, 
             "raw_ndvi": props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.20,
             "raw_wind": props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
             "raw_temp": props.get("tempC") if props.get("tempC") is not None else 36.5
