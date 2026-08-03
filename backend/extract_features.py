@@ -11,7 +11,7 @@ SCRIPT_DIR        = Path(__file__).resolve().parent
 ndvi_stats        = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
 ndvi_biome_stats  = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
 
-# ОЧИЩЕННЫЙ СПИСОК ФИЧ v5 СТРОГО ИЗ 18 ЭЛЕМЕНТОВ
+
 FEATURE_COLUMNS = [
     'NDVI_now', 'NDVI_anomaly', 'wind_mean', 'wind_max', 'rain', 'tempC', 
     'soil_moisture', 'evaporation', 'slope', 'soil_type', 'biome', 
@@ -93,6 +93,89 @@ def extract_features(raw_data, polygon, month):
 
     df = pd.DataFrame([raw], columns=FEATURE_COLUMNS)
     return scaler.transform(df), coords
+
+
+def extract_features_grid(raw_data, polygon, month, resolution_km=10):
+    polygon_coords = polygon.coordinates().getInfo()[0]
+    grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
+    if not grid_cells:
+        return [], []
+
+    stacked = ee.Image.cat([
+        raw_data["ndvi"].rename("NDVI_now"),
+        raw_data["wind_mean"].rename("wind_mean"),
+        raw_data["wind_max"].rename("wind_max"),
+        raw_data["rain"].rename("rain"),
+        raw_data["tempC"].rename("tempC"),
+        raw_data["soil_moisture"].rename("soil_moisture"),
+        raw_data["evaporation"].rename("evaporation"),
+        raw_data["slope"].rename("slope"),
+        raw_data["soil_type"].rename("soil_type"),
+        raw_data["biome"].rename("biome")
+    ])
+
+    features_list = []
+    for idx, cell in enumerate(grid_cells):
+        cell_polygon = ee.Geometry.Polygon([cell["bounds"]])
+        features_list.append(ee.Feature(cell_polygon, {
+            "grid_idx": idx,
+            "i": cell.get("i", 0),
+            "j": cell.get("j", 0),
+            "center_lat": cell["center_lat"],
+            "center_lon": cell["center_lon"]
+        }))
+    
+    fc = ee.FeatureCollection(features_list)
+    calc_scale = max(resolution_km * 1000, 3000)
+    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=calc_scale)
+    all_features_data = reduced_fc.getInfo()["features"]
+
+    rows = []
+    grid_meta = []
+
+    for f in all_features_data:
+        props = f.get("properties", {})
+        if props.get("NDVI_now") is None:
+            continue
+
+        geometry = f.get("geometry", {})
+        coords = geometry.get("coordinates", [[[0, 0]]])[0]
+        latitude  = props.get("center_lat") or (sum(pt[1] for pt in coords) / len(coords) if coords else 0)
+        longitude = props.get("center_lon") or (sum(pt[0] for pt in coords) / len(coords) if coords else 0)
+
+        row = _compute_features(
+            ndvi_value        = props.get("NDVI_now", 0),
+            wind_mean_value   = props.get("wind_mean", 0),
+            wind_max_value    = props.get("wind_max", 0),
+            rain_value        = props.get("rain", 0),
+            tempC_value       = props.get("tempC", 0),
+            moisture_value    = props.get("soil_moisture", 0),
+            evaporation_value = props.get("evaporation", 0),
+            slope_value       = props.get("slope", 0),
+            soil_type_value   = props.get("soil_type", 0),
+            biome_value       = props.get("biome", 0),
+            month             = month,
+            latitude          = latitude,
+            longitude         = longitude
+        )
+        rows.append(row)
+
+        grid_meta.append({
+            "i": props.get("i", 0),
+            "j": props.get("j", 0),
+            "lat": latitude,
+            "lon": longitude,
+            "step_deg": resolution_km / 111.0,
+            "raw_ndvi": props.get("NDVI_now", 0),
+            "raw_wind": props.get("wind_max", 0), 
+            "raw_temp": props.get("tempC", 0)
+        })
+
+    if not rows:
+        return [], []
+
+    df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
+    return scaler.transform(df), grid_meta
 
 
 def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
