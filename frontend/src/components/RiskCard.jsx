@@ -3,13 +3,14 @@ import React from "react";
 export default function RiskCard({ analysis }) {
   if (!analysis) return null;
 
-  // Форматируем процент риска эрозии
-  const riskPercent = (analysis.risk_score * 100).toFixed(1);
+  // ИСПРАВЛЕНИЕ 1: Бэкенд уже отдает risk_score в процентах (0-100).
+  // Убираем умножение на 100.
+  const riskPercent = Number(analysis.risk_score).toFixed(1);
 
-  // Функция для определения текстового статуса и класса цвета
+  // ИСПРАВЛЕНИЕ 2: Меняем пороги на реальные проценты (60.0 и 30.0 вместо 0.6 и 0.3)
   const getRiskStatus = (score) => {
-    if (score > 0.6) return { text: "High Risk", className: "risk-high" };
-    if (score >= 0.3) return { text: "Medium Risk", className: "risk-medium" };
+    if (score > 60.0) return { text: "High Risk", className: "risk-high" };
+    if (score >= 30.0) return { text: "Medium Risk", className: "risk-medium" };
     return { text: "Low Risk", className: "risk-low" };
   };
 

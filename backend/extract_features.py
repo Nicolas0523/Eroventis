@@ -7,9 +7,9 @@ from pathlib import Path
 from config import scaler
 from grid import create_grid
 
-SCRIPT_DIR        = Path(__file__).resolve().parent
-ndvi_stats        = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
-ndvi_biome_stats  = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
+SCRIPT_DIR         = Path(__file__).resolve().parent
+ndvi_stats         = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
+ndvi_biome_stats   = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
 
 FEATURE_COLUMNS = [
     'NDVI_now', 'NDVI_anomaly', 'wind_mean', 'wind_max', 'rain', 'tempC', 
@@ -26,11 +26,10 @@ def _safe_val(val, fallback):
     return float(val)
 
 def _compute_features(ndvi_value, wind_mean_value, wind_max_value,
-                       rain_value, tempC_value, moisture_value,
-                       evaporation_value, slope_value, soil_type_value,
-                       biome_value, month, latitude, longitude):
+                      rain_value, tempC_value, moisture_value,
+                      evaporation_value, slope_value, soil_type_value,
+                      biome_value, month, latitude, longitude):
 
-    # Разумные медианные фолбэки для физических параметров (не ломают ML-скалер)
     ndvi_val = _safe_val(ndvi_value, 0.15)
     wind_m   = _safe_val(wind_mean_value, 4.0)
     wind_max = _safe_val(wind_max_value, 8.0)
@@ -142,8 +141,7 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
         }))
     
     fc = ee.FeatureCollection(features_list)
-    calc_scale = max(resolution_km * 1000, 3000)
-    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=calc_scale)
+    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=5000)
     all_features_data = reduced_fc.getInfo().get("features", [])
 
     rows = []
@@ -151,7 +149,6 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
 
     for f in all_features_data:
         props = f.get("properties", {})
-
         geometry = f.get("geometry", {})
         coords = geometry.get("coordinates", [[[0, 0]]])[0]
         latitude  = props.get("center_lat") or (sum(pt[1] for pt in coords) / len(coords) if coords else 0)
@@ -198,29 +195,39 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     if not grid_cells:
         return [], []
 
+    # Загружаем реальные климатические проекции CMIP6 на будущее (2041-2060 гг.)
     cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
-            .filter(ee.Filter.eq('scenario', 'ssp585')) \
-            .filter(ee.Filter.eq('model', 'ACCESS-CM2')) \
-            .filter(ee.Filter.calendarRange(2040, 2050, "year")) \
+            .filter(ee.Filter.calendarRange(2041, 2060, "year")) \
             .filter(ee.Filter.calendarRange(month, month, "month")) \
+            .filter(ee.Filter.eq('scenario', 'ssp585')) \
+            .select(['tas', 'pr', 'sfcWind']) \
             .mean()
 
-    tempC_future    = cmip.select('tas').subtract(273.15).rename("tempC")
-    rain_future     = cmip.select('pr').multiply(86400).rename("rain")
-    wind_future     = cmip.select('sfcWind').rename("wind_mean")
+    # Динамические параметры из климатических моделей
+    tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
+    rain_future  = cmip.select('pr').multiply(86400).rename("rain")
+    wind_future  = cmip.select('sfcWind').rename("wind_mean")
+    
+    # Для максимального ветра берем пропорциональное изменение среднего ветра
+    wind_max_future = raw_data["wind_max"].multiply(
+        wind_future.divide(raw_data["wind_mean"].max(0.1))
+    ).rename("wind_max")
 
-    ndvi_layer = raw_data["ndvi"].rename("NDVI_now")
+    # Все остальные параметры (которых нет в прямом расчете CMIP6) 
+    # оставляем статичными (берем текущие значения сдатчика / базовой линии)
+    ndvi_future       = raw_data["ndvi"].rename("NDVI_now")
+    soil_future       = raw_data["soil_moisture"].rename("soil_moisture")
+    evap_future       = raw_data["evaporation"].rename("evaporation")
 
-    # Исправленный стек для климатического прогноза (без hurs, с правильным wind_max и soil_moisture из ERA5)
     stacked = ee.Image.cat([
-        ndvi_layer,
+        ndvi_future,
         wind_future,
-        wind_future.multiply(1.3).rename("wind_max"),
+        wind_max_future,
         rain_future,
         tempC_future,
-        raw_data["soil_moisture"].rename("soil_moisture"),
-        raw_data["evaporation"].rename("evaporation"),
+        soil_future,
+        evap_future,
         raw_data["slope"].rename("slope"),
         raw_data["soil_type"].rename("soil_type"),
         raw_data["biome"].rename("biome")
@@ -231,16 +238,20 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         cell_polygon = ee.Geometry.Polygon([cell["bounds"]])
         features_list.append(ee.Feature(cell_polygon, {
             "grid_idx": idx,
-            "i": cell.get("i", 0),
+            "i": cell.get("i", 0),  
             "j": cell.get("j", 0),
             "center_lat": cell["center_lat"],
             "center_lon": cell["center_lon"]
         }))
     
     fc = ee.FeatureCollection(features_list)
-    
-    # Исправленный масштаб на 10000 вместо 25000 для точности сетки 10км
-    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=10000)
+
+    reduced_fc = stacked.reduceRegions(
+        collection=fc,
+        reducer=ee.Reducer.mean(),
+        scale=10000  
+    )
+
     all_features_data = reduced_fc.getInfo().get("features", [])
 
     rows = []
@@ -270,7 +281,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             longitude         = longitude
         )
         rows.append(row)
-        
+
         grid_meta.append({
             "i": props.get("i", 0),
             "j": props.get("j", 0),
@@ -278,12 +289,12 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "lon": longitude,
             "step_deg": resolution_km / 111.0,
             "raw_ndvi": _safe_val(props.get("NDVI_now"), 0.15),
-            "raw_wind": _safe_val(props.get("wind_mean"), 4.0),
+            "raw_wind": _safe_val(props.get("wind_max"), 8.0),
             "raw_temp": _safe_val(props.get("tempC"), 25.0)
         })
-            
+
     if not rows:
-        return [], []
+        return np.array([]), []
 
     df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
     return scaler.transform(df), grid_meta

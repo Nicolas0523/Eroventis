@@ -46,7 +46,7 @@ climate_cache = TTLCache(maxsize=50, ttl=86400)
 jobs = OrderedDict()
 MAX_JOBS = 50
 RESOLUTION = 10
-GEE_TIMEOUT_SECONDS = 120
+GEE_TIMEOUT_SECONDS = 300
 
 jobs_lock = asyncio.Lock()
 analysis_semaphore = asyncio.Semaphore(2)
@@ -259,10 +259,12 @@ async def forecast_climate(
     )
 
 def _climate_forecast_sync(data: AnalysisRequest):
+    print("-> Начало фонового расчета климата...")
     polygon   = ee.Geometry.Polygon(data.geometry.coordinates)
     cache_key = f"future_{str(data.geometry.coordinates)}_{data.start_date}"
 
     if cache_key in climate_cache:
+        print("-> Взято из кэша!")
         return climate_cache[cache_key]
 
     try:
@@ -271,13 +273,18 @@ def _climate_forecast_sync(data: AnalysisRequest):
         month = 6  
 
     resolution = RESOLUTION
+    print(print(f"-> Запуск Earth Engine grid (разрешение: {resolution} км)..."))
+    
     try:
         grid_climate = prediction_future_grid(polygon, month=month, resolution_km=resolution)
     except Exception as e:
+        print(f"-> Ошибка в GEE/модели: {e}")
         return {"error": str(e)}
 
     if not grid_climate:
         return {"error": "Failed to generate climate forecast for this region."}
+
+    print("-> Расчет рисков и хотспотов...")
 
     
     for cell in grid_climate:

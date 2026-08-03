@@ -46,27 +46,21 @@ def create_grid(polygon, resolution_km=10):
     return grid_lines
 
 
-def calculate_hotspots(grid_cells, risk_threshold=None, min_size=2): # min_size-ды 2-ге түсірдік, кішігірім ошақтарды да көру үшін
+def calculate_hotspots(grid_cells, risk_threshold=None, min_size=2):
     if not grid_cells:
         return []
         
-
     all_risks = [c.get("risk", 0) for c in grid_cells]
-    max_grid_risk = max(all_risks) if all_risks else 0
     
-
     if risk_threshold is None:
-        risk_threshold = max_grid_risk * 0.65
+        risk_threshold = np.percentile(all_risks, 65) if all_risks else 0
         
-
     high_risk = [c for c in grid_cells if c.get("risk", 0) >= risk_threshold]
     high_risk_dict = {(c["i"], c["j"]): c for c in high_risk if "i" in c and "j" in c}
     
-
     visited = set()
     hotspots_centers = []
     
-
     for cell in high_risk:
         i, j = cell.get("i"), cell.get("j")
         if i is None or j is None or (i, j) in visited:
@@ -93,14 +87,13 @@ def calculate_hotspots(grid_cells, risk_threshold=None, min_size=2): # min_size-
             avg_lon = sum(c["lon"] for c in group) / len(group)
             max_risk_in_group = max(c["risk"] for c in group)
             
-            commercial_percentage = (max_risk_in_group / 2.0) * 100.0
-            commercial_percentage = min(commercial_percentage, 100.0) 
+            commercial_percentage = round(max_risk_in_group, 1)
             
             hotspots_centers.append({
                 "lat": round(avg_lat, 4),
                 "lon": round(avg_lon, 4),
                 "cells_count": len(group),
-                "max_risk": round(commercial_percentage, 1) 
+                "max_risk": commercial_percentage 
             })
             
     return sorted(hotspots_centers, key=lambda x: x['max_risk'], reverse=True)

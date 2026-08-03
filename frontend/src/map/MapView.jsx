@@ -61,8 +61,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         const halfStep = step / 2;
         const rawRisk = cell.risk;
 
-        // Физическая шкала SP5 V5
-        const normalizedRisk = Math.min(Math.max(rawRisk / 2.0, 0), 1);
+        // ИСПРАВЛЕНИЕ 1: Бэкенд шлет от 0 до 100. 
+        // Делим на 100, чтобы получить шкалу от 0.0 до 1.0 для функции цвета.
+        const normalizedRisk = Math.min(Math.max(rawRisk / 100.0, 0), 1);
 
         return {
           type: "Feature",
@@ -94,7 +95,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     };
   }, [analysis]);
 
- 
+
   const geoJsonKey = useMemo(() => {
     if (!analysis) return "no-data";
     return `${analysis.analysis_type || "default"}_${analysis.start_date}_${analysis.end_date}_${analysis.grid?.length}_${Date.now()}`;
@@ -130,18 +131,17 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                 allowIntersection: false,
                 drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
                 shapeOptions: { 
-                  color: "#3b82f6",       // Яркий синий цвет контура (можно поставить #10b981 для зеленого)
-                  weight: 3,             // Толщина линии границы
-                  opacity: 0.9,          // Четкая видимость линии
-                  fillColor: "#3b82f6",   // Легкая заливка во время рисования
-                  fillOpacity: 0.15,     // Прозрачность заливки
-                  dashArray: "6, 6"      // Пунктирная линия (выглядит как профессиональная зона исследования)
+                  color: "#3b82f6",       
+                  weight: 3,             
+                  opacity: 0.9,          
+                  fillColor: "#3b82f6",   
+                  fillOpacity: 0.15,     
+                  dashArray: "6, 6"      
                 },
               },
             }}
           />
         </FeatureGroup>
-
 
         {geoJsonData && (
           <GeoJSON
@@ -157,7 +157,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
               color: "transparent",
             })}
             onEachFeature={(feature, layer) => {
-              const pctRisk = ((feature.properties.raw_risk / 2.0) * 100).toFixed(1);
+              // ИСПРАВЛЕНИЕ 2: raw_risk уже приходит как процент (например, 2.6).
+              // Мы больше не умножаем на 100 и не делим на 2.
+              const pctRisk = parseFloat(feature.properties.raw_risk).toFixed(1);
+              
               layer.bindPopup(`
                 <div style="font-family: sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4;">
                   <strong style="font-size: 12px; color: #0f172a;">Wind Erosion Details</strong><br/>
