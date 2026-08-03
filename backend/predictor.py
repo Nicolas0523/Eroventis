@@ -79,10 +79,14 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
 
 
 def prediction_future_grid(polygon, month, resolution_km=10):
+
+    start_date = f"2023-{month:02d}-01"
+    end_date   = f"2025-{month:02d}-28"
+
     raw_data = load_raw_data_multi_year(
         polygon, 
-        "2025-06-01", 
-        "2025-08-31"
+        start_date, 
+        end_date
     ) 
 
     scaled, coords_meta = extract_future_features_grid(
@@ -92,7 +96,8 @@ def prediction_future_grid(polygon, month, resolution_km=10):
         resolution_km=resolution_km
     )
 
-    if len(scaled) == 0: return []
+    if len(scaled) == 0: 
+        return []
 
     raw_preds = ml_model.predict(scaled)
 

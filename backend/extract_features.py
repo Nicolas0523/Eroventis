@@ -95,94 +95,10 @@ def extract_features(raw_data, polygon, month):
     return scaler.transform(df), coords
 
 
-def extract_features_grid(raw_data, polygon, month, resolution_km=10):
-    polygon_coords = polygon.coordinates().getInfo()[0]
-    grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
-    if not grid_cells:
-        return [], []
-
-    stacked = ee.Image.cat([
-        raw_data["ndvi"].rename("NDVI_now"),
-        raw_data["wind_mean"].rename("wind_mean"),
-        raw_data["wind_max"].rename("wind_max"),
-        raw_data["rain"].rename("rain"),
-        raw_data["tempC"].rename("tempC"),
-        raw_data["soil_moisture"].rename("soil_moisture"),
-        raw_data["evaporation"].rename("evaporation"),
-        raw_data["slope"].rename("slope"),
-        raw_data["soil_type"].rename("soil_type"),
-        raw_data["biome"].rename("biome")
-    ])
-
-    features_list = []
-    for idx, cell in enumerate(grid_cells):
-        cell_polygon = ee.Geometry.Polygon([cell["bounds"]])
-        features_list.append(ee.Feature(cell_polygon, {
-            "grid_idx": idx,
-            "i": cell.get("i", 0),
-            "j": cell.get("j", 0),
-            "center_lat": cell["center_lat"],
-            "center_lon": cell["center_lon"]
-        }))
-    
-    fc = ee.FeatureCollection(features_list)
-    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=5000)
-    all_features_data = reduced_fc.getInfo()["features"]
-
-    rows = []
-    grid_meta = []
-
-    for f in all_features_data:
-        props = f.get("properties", {})
-        if props.get("NDVI_now") is None:
-            continue
-
-        geometry = f.get("geometry", {})
-        coords = geometry.get("coordinates", [[[0, 0]]])[0]
-        latitude  = props.get("center_lat") or (sum(pt[1] for pt in coords) / len(coords) if coords else 0)
-        longitude = props.get("center_lon") or (sum(pt[0] for pt in coords) / len(coords) if coords else 0)
-
-        row = _compute_features(
-            ndvi_value        = props.get("NDVI_now", 0),
-            wind_mean_value   = props.get("wind_mean", 0),
-            wind_max_value    = props.get("wind_max", 0),
-            rain_value        = props.get("rain", 0),
-            tempC_value       = props.get("tempC", 0),
-            moisture_value    = props.get("soil_moisture", 0),
-            evaporation_value = props.get("evaporation", 0),
-            slope_value       = props.get("slope", 0),
-            soil_type_value   = props.get("soil_type", 0),
-            biome_value       = props.get("biome", 0),
-            month             = month,
-            latitude          = latitude,
-            longitude         = longitude
-        )
-        rows.append(row)
-
-        grid_meta.append({
-            "i": props.get("i", 0),
-            "j": props.get("j", 0),
-            "lat": latitude,
-            "lon": longitude,
-            "step_deg": resolution_km / 111.0,
-            "raw_ndvi": props.get("NDVI_now", 0),
-            "raw_wind": props.get("wind_max", 0), 
-            "raw_temp": props.get("tempC", 0)
-        })
-
-    if not rows:
-        return [], []
-
-    df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
-    return scaler.transform(df), grid_meta
-
-
 def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
+
     polygon_coords = polygon.coordinates().getInfo()[0]
     
-    area_sq_km = polygon.area().divide(1e6).getInfo()
-    resolution_km = 10
-
     grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
     if not grid_cells:
         return [], []
@@ -191,10 +107,9 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         cmip_coll = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
-            .filter(ee.Filter.calendarRange(2045, 2047, 'year')) \
-            .filter(ee.Filter.calendarRange(6, 8, 'month'))
+            .filter(ee.Filter.calendarRange(2041, 2060, "year")) \
+            .filter(ee.Filter.calendarRange(month, month, "month"))
 
-        
         def normalize_cmip_bands(img):
             t = img.select('tas').resample('bilinear').subtract(273.15).rename('tempC')
             p = img.select('pr').resample('bilinear').multiply(86400).rename('rain')
@@ -202,8 +117,8 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             
             hurs = ee.Algorithms.If(
                 img.bandNames().contains('hurs'),
-                img.select('hurs').resample('bilinear').divide(100.0).multiply(0.25),
-                ee.Image.constant(0.12)
+                img.select('hurs').resample('bilinear').divide(100.0),
+                raw_data.get("soil_moisture", ee.Image.constant(0.12))
             )
             hurs_img = ee.Image(hurs).rename('soil_moisture')
             
@@ -217,26 +132,29 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         moisture_future = cmip.select('soil_moisture')
 
     except Exception as e:
-        print(f"[CMIP6 Fallback]: {e}")
-        tempC_future = ee.Image.constant(37.5).rename("tempC")
-        rain_future = ee.Image.constant(0.15).rename("rain")
-        wind_future = ee.Image.constant(6.5).rename("wind_mean")
-        moisture_future = ee.Image.constant(0.10).rename("soil_moisture")
+        print(f"[CMIP6 Fallback - Using Real Data]: {e}")
+        tempC_future = raw_data.get("tempC", ee.Image.constant(30.0))
+        rain_future = raw_data.get("rain", ee.Image.constant(1.0))
+        wind_future = raw_data.get("wind_mean", ee.Image.constant(5.0))
+        moisture_future = raw_data.get("soil_moisture", ee.Image.constant(0.2))
 
-    ndvi_base = raw_data.get("ndvi", ee.Image.constant(0.25))
-    ndvi_future = ndvi_base.multiply(0.70).unmask(0.15).rename("NDVI_now")
+    ndvi_future = raw_data["ndvi"].resample("bilinear").rename("NDVI_now").unmask(0.20)
+
+    wind_max = wind_future.rename("wind_max")
 
     real_slope = ee.Terrain.slope(ee.Image("USGS/SRTMGL1_003")).rename('slope')
     real_soil  = ee.Image("OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02").select('b0').rename('soil_type')
 
+    evaporation_future = raw_data.get("evaporation", ee.Image.constant(5.5)).rename("evaporation")
+
     stacked = ee.Image.cat([
         ndvi_future,
         wind_future.unmask(5.0),
-        raw_data.get("wind_max", ee.Image.constant(10.0)).multiply(1.20).unmask(8.0).rename("wind_max"),
+        wind_max.unmask(10.0),
         rain_future.unmask(0.5),
         tempC_future.unmask(35.0),
         moisture_future.unmask(0.15),
-        raw_data.get("evaporation", ee.Image.constant(5.0)).multiply(1.3).unmask(6.0).rename("evaporation"),
+        evaporation_future.unmask(5.5),
         real_slope.unmask(1.0),
         real_soil.unmask(2.0),
         raw_data.get("biome", ee.Image.constant(3.0)).unmask(3.0).rename("biome")
@@ -255,7 +173,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
 
     fc = ee.FeatureCollection(features_list)
 
-    calc_scale = 10000 if area_sq_km > 10000 else 5000
+    calc_scale = max(resolution_km * 1000, 3000)
 
     reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=calc_scale)
     all_features_data = reduced_fc.getInfo()["features"]
@@ -271,7 +189,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         longitude = props.get("center_lon") or (sum(pt[0] for pt in coords) / len(coords) if coords else 0)
         
         row = _compute_features(
-            ndvi_value        = props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.15,
+            ndvi_value        = props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.20,
             wind_mean_value   = props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
             wind_max_value    = props.get("wind_max") if props.get("wind_max") is not None else 10.0,
             rain_value        = props.get("rain") if props.get("rain") is not None else 0.1,
@@ -294,7 +212,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "lat": latitude,
             "lon": longitude,
             "step_deg": resolution_km / 111.0,
-            "raw_ndvi": props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.15,
+            "raw_ndvi": props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.20,
             "raw_wind": props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
             "raw_temp": props.get("tempC") if props.get("tempC") is not None else 36.5
         })
@@ -304,4 +222,3 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     
     df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
     return scaler.transform(df), grid_meta
-
