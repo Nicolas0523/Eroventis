@@ -37,7 +37,7 @@ export const pollTaskStatus = async (jobId) => {
   }
 
   const pollInterval = 4000; // Оптимизация: опрашиваем раз в 4 секунды, чтобы не забивать Render
-  const timeout = 120000; // 2 минуты
+  const timeout = 180000; 
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
