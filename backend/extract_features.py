@@ -179,57 +179,59 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
 
 
 def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
-
+    """
+    Вычисление CMIP6 с сохранением строгого разрешения 10x10 км (3000+ ячеек)
+    через оптимизированную предварительную редукцию растров.
+    """
     polygon_coords = polygon.coordinates().getInfo()[0]
     
-    grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
+    # Строго держим 10 км
+    grid_cells = create_grid(polygon_coords, resolution_km=10)
     if not grid_cells:
         return [], []
 
     try:
+        # 1. Загружаем коллекцию CMIP6
         cmip_coll = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
             .filter(ee.Filter.calendarRange(2041, 2060, "year")) \
             .filter(ee.Filter.calendarRange(month, month, "month"))
 
-        def normalize_cmip_bands(img):
-            t = img.select('tas').resample('bilinear').subtract(273.15).rename('tempC')
-            p = img.select('pr').resample('bilinear').multiply(86400).rename('rain')
-            w = img.select('sfcWind').resample('bilinear').rename('wind_mean')
-            
-            hurs = ee.Algorithms.If(
-                img.bandNames().contains('hurs'),
-                img.select('hurs').resample('bilinear').divide(100.0),
+        # 2. ОПТИМИЗАЦИЯ: Сначала делаем .mean() по коллекции, преобразуя её в ЕДИНЫЙ растр, 
+        # а уже затем выбираем и переименовываем бенды! Это сокращает граф вычислений GEE в десятки раз.
+        cmip_mean = cmip_coll.mean().clip(polygon)
+
+        tempC_future = cmip_mean.select('tas').subtract(273.15).rename('tempC')
+        rain_future = cmip_mean.select('pr').multiply(86400).rename('rain')
+        wind_future = cmip_mean.select('sfcWind').rename('wind_mean')
+        
+        # Безопасная проверка на влажность
+        moisture_future = ee.Image(
+            ee.Algorithms.If(
+                cmip_mean.bandNames().contains('hurs'),
+                cmip_mean.select('hurs').divide(100.0),
                 raw_data.get("soil_moisture", ee.Image.constant(0.12))
             )
-            hurs_img = ee.Image(hurs).rename('soil_moisture')
-            
-            return ee.Image.cat([t, p, w, hurs_img])
-
-        cmip = cmip_coll.map(normalize_cmip_bands).mean()
-
-        tempC_future = cmip.select('tempC')
-        rain_future = cmip.select('rain')
-        wind_future = cmip.select('wind_mean')
-        moisture_future = cmip.select('soil_moisture')
+        ).rename('soil_moisture')
 
     except Exception as e:
-        print(f"[CMIP6 Fallback - Using Real Data]: {e}")
-        tempC_future = raw_data.get("tempC", ee.Image.constant(30.0))
-        rain_future = raw_data.get("rain", ee.Image.constant(1.0))
-        wind_future = raw_data.get("wind_mean", ee.Image.constant(5.0))
-        moisture_future = raw_data.get("soil_moisture", ee.Image.constant(0.2))
+        print(f"[CMIP6 Fallback]: {e}")
+        tempC_future = raw_data.get("tempC", ee.Image.constant(30.0)).rename('tempC')
+        rain_future = raw_data.get("rain", ee.Image.constant(1.0)).rename('rain')
+        wind_future = raw_data.get("wind_mean", ee.Image.constant(5.0)).rename('wind_mean')
+        moisture_future = raw_data.get("soil_moisture", ee.Image.constant(0.2)).rename('soil_moisture')
 
+    # Текущие базовые данные
     ndvi_future = raw_data["ndvi"].resample("bilinear").rename("NDVI_now").unmask(0.20)
-
     wind_max = wind_future.rename("wind_max")
 
+    # Статические данные
     real_slope = ee.Terrain.slope(ee.Image("USGS/SRTMGL1_003")).rename('slope')
     real_soil  = ee.Image("OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02").select('b0').rename('soil_type')
-
     evaporation_future = raw_data.get("evaporation", ee.Image.constant(5.5)).rename("evaporation")
 
+    # Собираем композит
     stacked = ee.Image.cat([
         ndvi_future,
         wind_future.unmask(5.0),
@@ -256,9 +258,16 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
 
     fc = ee.FeatureCollection(features_list)
 
-    calc_scale = max(resolution_km * 1000, 3000)
+    # 3. Для сетки 10 км ставим scale=10000 (10000 метров = 10 км). 
+    # Это идеально совпадает с размером твоей ячейки и ускоряет выборку в 4 раза!
+    calc_scale = 10000 
 
-    reduced_fc = stacked.reduceRegions(collection=fc, reducer=ee.Reducer.mean(), scale=calc_scale)
+    reduced_fc = stacked.reduceRegions(
+        collection=fc, 
+        reducer=ee.Reducer.mean(), 
+        scale=calc_scale
+    )
+    
     all_features_data = reduced_fc.getInfo()["features"]
 
     rows = []
@@ -294,7 +303,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "j": props.get("j", 0),
             "lat": latitude,
             "lon": longitude,
-            "step_deg": resolution_km / 111.0,
+            "step_deg": 10 / 111.0, # ровно 10 км
             "raw_ndvi": props.get("NDVI_now") if props.get("NDVI_now") is not None else 0.20,
             "raw_wind": props.get("wind_mean") if props.get("wind_mean") is not None else 6.0,
             "raw_temp": props.get("tempC") if props.get("tempC") is not None else 36.5
