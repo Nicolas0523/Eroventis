@@ -37,14 +37,18 @@ const getDynamicCommercialColor = (value) => {
 
 const canvasRenderer = L.canvas({ padding: 0.5 });
 
-// Компонент создания слоя с прозрачностью без стыковых швов
+// Создаем слой с CSS-размытием (blur) для стилизации под спутниковый растр
 function HeatmapPane() {
   const map = useMap();
   useEffect(() => {
-    if (!map.getPane("heatmapPane")) {
-      const pane = map.createPane("heatmapPane");
+    let pane = map.getPane("heatmapPane");
+    if (!pane) {
+      pane = map.createPane("heatmapPane");
       pane.style.zIndex = 400;
-      pane.style.opacity = "0.75"; // Прозрачность регулируется здесь для всего слоя сразу
+      pane.style.opacity = "0.80";
+      // CSS-фильтр стирает границы квадратов и превращает их в единый тепловой поток
+      pane.style.filter = "blur(8px)";
+      pane.style.pointerEvents = "auto";
     }
   }, [map]);
   return null;
@@ -78,7 +82,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
-    // Сглаживание 3x3
+    // Пространственное сглаживание значений 3x3
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
@@ -110,8 +114,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     const range = maxRisk - minRisk;
 
     const features = smoothedGrid.map((cell) => {
-      // Минимальный перехлест (1.02) перекрывает субпиксельные зазоры
-      const step = (cell.step_deg || 0.09) * 1.02;
+      // Изучаем точный шаг без умножения, чтобы избежать двойной накладки слоев
+      const step = cell.step_deg || 0.09;
       const halfStep = step / 2;
 
       const rawRisk = cell.smoothed_risk;
@@ -200,7 +204,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 1.0, // 100% заливка убирает сетку и стыки
+              fillOpacity: 1.0,
               stroke: false,
               weight: 0,
               color: "transparent",
