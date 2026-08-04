@@ -7,32 +7,18 @@ import numpy as np
 
 def _apply_calibration(preds):
     preds = np.array(preds)
-    
     if bias_shift is not None:
         preds = preds + bias_shift
         
     calibrated = 1 / (1 + np.exp(-preds / 4.0)) * 100.0
-        
     return np.clip(calibrated, 0.0, 100.0).flatten()
 
 
 def prediction_val(polygon, start_date, end_date):
-    raw_data = load_raw_data_multi_year(
-        polygon,
-        start_date,
-        end_date
-    )
+    raw_data = load_raw_data_multi_year(polygon, start_date, end_date)
+    month = datetime.strptime(start_date, "%Y-%m-%d").month
 
-    month = datetime.strptime(
-        start_date,
-        "%Y-%m-%d"
-    ).month
-
-    scaled_features, _ = extract_features(
-        raw_data,
-        polygon,
-        month
-    )
+    scaled_features, _ = extract_features(raw_data, polygon, month)
 
     raw_pred = ml_model.predict(scaled_features)
     calibrated = _apply_calibration(raw_pred)[0]
@@ -73,10 +59,12 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
 
 
 def prediction_future_grid(polygon, month, resolution_km=10):
+    target_month = month if month in [5, 6, 7, 8, 9] else 7
+
     raw_data = load_raw_data_multi_year(polygon, "2025-06-01", "2025-08-31") 
 
     scaled, coords_meta = extract_future_features_grid(
-        raw_data, polygon, month, resolution_km=resolution_km
+        raw_data, polygon, target_month, resolution_km=resolution_km
     )
 
     if len(scaled) == 0:

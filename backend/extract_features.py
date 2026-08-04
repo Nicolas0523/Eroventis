@@ -19,11 +19,10 @@ FEATURE_COLUMNS = [
 ]
 
 def _safe_val(val, fallback):
-    """Возвращает реальное значение со спутника. 
-    Если данные отсутствуют (None/NaN), берет безопасную медиану диапазона."""
     if val is None or np.isnan(val):
         return float(fallback)
     return float(val)
+
 
 def _compute_features(ndvi_value, wind_mean_value, wind_max_value,
                       rain_value, tempC_value, moisture_value,
@@ -198,30 +197,28 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     if not grid_cells:
         return [], []
 
-    # Загружаем реальные климатические проекции CMIP6 на будущее (2041-2060 гг.)
+
+    target_month = month if month in [5, 6, 7, 8, 9] else 7
+
     cmip = ee.ImageCollection("NASA/GDDP-CMIP6") \
             .filterBounds(polygon) \
             .filter(ee.Filter.calendarRange(2041, 2060, "year")) \
-            .filter(ee.Filter.calendarRange(month, month, "month")) \
+            .filter(ee.Filter.calendarRange(target_month, target_month, "month")) \
             .filter(ee.Filter.eq('scenario', 'ssp585')) \
             .select(['tas', 'pr', 'sfcWind']) \
             .mean()
 
-    # Динамические параметры из климатических моделей
     tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
     rain_future  = cmip.select('pr').multiply(86400).rename("rain")
     wind_future  = cmip.select('sfcWind').rename("wind_mean")
     
-    # Для максимального ветра берем пропорциональное изменение среднего ветра
     wind_max_future = raw_data["wind_max"].multiply(
         wind_future.divide(raw_data["wind_mean"].max(0.1))
     ).rename("wind_max")
 
-    # Все остальные параметры (которых нет в прямом расчете CMIP6) 
-    # оставляем статичными (берем текущие значения сдатчика / базовой линии)
-    ndvi_future       = raw_data["ndvi"].rename("NDVI_now")
-    soil_future       = raw_data["soil_moisture"].rename("soil_moisture")
-    evap_future       = raw_data["evaporation"].rename("evaporation")
+    ndvi_future = raw_data["ndvi"].rename("NDVI_now")
+    soil_future = raw_data["soil_moisture"].rename("soil_moisture")
+    evap_future = raw_data["evaporation"].rename("evaporation")
 
     stacked = ee.Image.cat([
         ndvi_future,
@@ -248,7 +245,6 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         }))
     
     fc = ee.FeatureCollection(features_list)
-
     reduced_fc = stacked.reduceRegions(
         collection=fc,
         reducer=ee.Reducer.mean(),
@@ -262,7 +258,6 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
 
     for f in all_features_data:
         props = f.get("properties", {})
-        
         geometry = f.get("geometry", {})
         coords = geometry.get("coordinates", [[[0, 0]]])[0]
         latitude  = props.get("center_lat") or (sum(pt[1] for pt in coords) / len(coords) if coords else 0)
@@ -279,7 +274,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             slope_value       = props.get("slope"),
             soil_type_value   = props.get("soil_type"),
             biome_value       = props.get("biome"),
-            month             = month,
+            month             = target_month,
             latitude          = latitude,
             longitude         = longitude
         )
@@ -300,7 +295,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         })
 
     if not rows:
-        return np.array([]), []
+        return [], []
 
     df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
     return scaler.transform(df), grid_meta
