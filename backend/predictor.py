@@ -25,15 +25,14 @@ def _apply_calibration(preds):
     return np.clip(calibrated, 0.0, 100.0).flatten()
 
 
-def smooth_grid_risks(grid_results, sigma=1.2):
+def smooth_grid_risks(grid_results, sigma=1.8):
     """
-    Абсолютно защищенное Гауссово сглаживание.
-    Исключает UnboundLocalError и ошибки обращения к пустым переменным.
+    Нормированное пространственное сглаживание по координатной сетке.
+    Убирает физически нереалистичные ступенчатые перепады на стыках биомов.
     """
     if not grid_results or not isinstance(grid_results, list) or len(grid_results) == 0:
         return []
 
-    # 1. Сбор уникальных координат через безопасные генераторы
     lats = [entry.get('lat') for entry in grid_results if isinstance(entry, dict) and 'lat' in entry]
     lons = [entry.get('lon') for entry in grid_results if isinstance(entry, dict) and 'lon' in entry]
 
@@ -55,7 +54,6 @@ def smooth_grid_risks(grid_results, sigma=1.2):
     grid_matrix = np.zeros((n_rows, n_cols))
     weight_mask = np.zeros((n_rows, n_cols))
 
-    # 2. Заполнение матрицы
     for entry in grid_results:
         if not isinstance(entry, dict):
             continue
@@ -71,7 +69,6 @@ def smooth_grid_risks(grid_results, sigma=1.2):
             grid_matrix[r, c] = entry.get('risk', 0.0)
             weight_mask[r, c] = 1.0
 
-    # 3. Нормированная свёртка
     smoothed_vals = gaussian_filter(grid_matrix, sigma=sigma, mode='nearest')
     smoothed_weights = gaussian_filter(weight_mask, sigma=sigma, mode='nearest')
 
@@ -82,7 +79,6 @@ def smooth_grid_risks(grid_results, sigma=1.2):
         where=smoothed_weights > 0
     )
 
-    # 4. Запись результатов
     for entry in grid_results:
         if not isinstance(entry, dict):
             continue
@@ -146,7 +142,7 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
             "step_deg": meta_entry.get("step_deg", 0.09)
         })
 
-    return smooth_grid_risks(grid_results, sigma=1.2)
+    return smooth_grid_risks(grid_results, sigma=1.8)
 
 
 def prediction_future_grid(polygon, month, resolution_km=10):
@@ -182,7 +178,7 @@ def prediction_future_grid(polygon, month, resolution_km=10):
             "step_deg": meta_entry.get("step_deg", 0.09)
         })
 
-    return smooth_grid_risks(grid_results, sigma=1.2)
+    return smooth_grid_risks(grid_results, sigma=1.8)
 
 
 def get_feature_importance():

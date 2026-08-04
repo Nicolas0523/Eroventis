@@ -116,15 +116,19 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
     if not grid_cells:
         return [], []
 
+    # Предварительное размытие резких пространственных растров
+    slope_smoothed = raw_data["slope"].focalMean(radius=10000, units='meters')
+    moisture_smoothed = raw_data["soil_moisture"].focalMean(radius=10000, units='meters')
+
     stacked = ee.Image.cat([
         raw_data["ndvi"].rename("NDVI_now"),
         raw_data["wind_mean"].rename("wind_mean"),
         raw_data["wind_max"].rename("wind_max"),
         raw_data["rain"].rename("rain"),
         raw_data["tempC"].rename("tempC"),
-        raw_data["soil_moisture"].rename("soil_moisture"),
+        moisture_smoothed.rename("soil_moisture"),
         raw_data["evaporation"].rename("evaporation"),
-        raw_data["slope"].rename("slope"),
+        slope_smoothed.rename("slope"),
         raw_data["soil_type"].rename("soil_type"),
         raw_data["biome"].rename("biome")
     ])
@@ -216,19 +220,18 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         wind_future.divide(raw_data["wind_mean"].max(0.1))
     ).rename("wind_max")
 
-    ndvi_future = raw_data["ndvi"].rename("NDVI_now")
-    soil_future = raw_data["soil_moisture"].rename("soil_moisture")
-    evap_future = raw_data["evaporation"].rename("evaporation")
+    slope_smoothed = raw_data["slope"].focalMean(radius=10000, units='meters')
+    moisture_smoothed = raw_data["soil_moisture"].focalMean(radius=10000, units='meters')
 
     stacked = ee.Image.cat([
-        ndvi_future,
+        raw_data["ndvi"].rename("NDVI_now"),
         wind_future,
         wind_max_future,
         rain_future,
         tempC_future,
-        soil_future,
-        evap_future,
-        raw_data["slope"].rename("slope"),
+        moisture_smoothed.rename("soil_moisture"),
+        raw_data["evaporation"].rename("evaporation"),
+        slope_smoothed.rename("slope"),
         raw_data["soil_type"].rename("soil_type"),
         raw_data["biome"].rename("biome")
     ])
