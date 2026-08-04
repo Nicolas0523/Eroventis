@@ -22,26 +22,42 @@ def _apply_calibration(preds):
     return np.clip(calibrated, 0.0, 100.0).flatten()
 
 
-def smooth_grid_risks(grid_results, sigma=0.7):
+def smooth_grid_risks(grid_results, sigma=1.2):
     if not grid_results:
         return []
 
-    max_i = max(cell['i'] for cell in grid_results)
-    max_j = max(cell['j'] for cell in grid_results)
+    unique_lats = sorted(list(set(round(cell['lat'], 5) for cell in grid_results)), reverse=True)
+    unique_lons = sorted(list(set(round(cell['lon'], 5))))
 
-    grid_matrix = np.full((max_i + 1, max_j + 1), np.nan)
+    lat_map = {lat: idx for idx, lat in enumerate(unique_lats)}
+    lon_map = {lon: idx for idx, lon in enumerate(unique_lons)}
+
+    n_rows = len(unique_lats)
+    n_cols = len(unique_lons)
+
+    grid_matrix = np.zeros((n_rows, n_cols))
+    weight_mask = np.zeros((n_rows, n_cols))
+
     for cell in grid_results:
-        grid_matrix[cell['i'], cell['j']] = cell['risk']
+        r = lat_map[round(cell['lat'], 5)]
+        c = lon_map[round(cell['lon'], 5)]
+        grid_matrix[r, c] = cell['risk']
+        weight_mask[r, c] = 1.0
 
-    nan_mask = np.isnan(grid_matrix)
-    grid_matrix_filled = np.where(nan_mask, 0.0, grid_matrix)
+    smoothed_vals = gaussian_filter(grid_matrix, sigma=sigma, mode='nearest')
+    smoothed_weights = gaussian_filter(weight_mask, sigma=sigma, mode='nearest')
 
-    smoothed = gaussian_filter(grid_matrix_filled, sigma=sigma)
+    normalized_smoothed = np.divide(
+        smoothed_vals, 
+        smoothed_weights, 
+        out=np.zeros_like(smoothed_vals), 
+        where=smoothed_weights > 0
+    )
 
     for cell in grid_results:
-        i, j = cell['i'], cell['j']
-        if not nan_mask[i, j]:
-            cell['risk'] = round(float(np.clip(smoothed[i, j], 0.0, 100.0)), 1)
+        r = lat_map[round(cell['lat'], 5)]
+        c = lon_map[round(cell['lon'], 5)]
+        cell['risk'] = round(float(np.clip(normalized_smoothed[r, c], 0.0, 100.0)), 1)
 
     return grid_results
 
