@@ -7,9 +7,9 @@ from pathlib import Path
 from config import scaler
 from grid import create_grid
 
-SCRIPT_DIR         = Path(__file__).resolve().parent
-ndvi_stats         = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
-ndvi_biome_stats   = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
+SCRIPT_DIR = Path(__file__).resolve().parent
+ndvi_stats = joblib.load(SCRIPT_DIR / "ndvi_stats.pkl")
+ndvi_biome_stats = joblib.load(SCRIPT_DIR / "ndvi_biome_stats.pkl")
 
 FEATURE_COLUMNS = [
     'NDVI_now', 'NDVI_anomaly', 'wind_mean', 'wind_max', 'rain', 'tempC', 
@@ -17,6 +17,7 @@ FEATURE_COLUMNS = [
     'month', 'latitude', 'longitude', 'aridity_index', 'is_dry_season',
     'ndvi_zscore', 'ndvi_biome_anomaly'
 ]
+
 
 def _safe_val(val, fallback):
     if val is None or np.isnan(val):
@@ -196,7 +197,6 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     grid_cells = create_grid(polygon_coords, resolution_km=resolution_km)
     if not grid_cells:
         return [], []
-
 
     target_month = month if month in [5, 6, 7, 8, 9] else 7
 

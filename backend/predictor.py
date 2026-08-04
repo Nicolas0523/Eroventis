@@ -1,8 +1,16 @@
-from extract_features import extract_features, extract_features_grid, extract_future_features_grid
-from data_loader import load_raw_data, load_raw_data_multi_year
-from config import ml_model, bias_shift
-from datetime import datetime
 import numpy as np
+import pandas as pd
+from datetime import datetime
+from scipy.ndimage import gaussian_filter
+
+from config import ml_model, bias_shift
+from data_loader import load_raw_data, load_raw_data_multi_year
+from extract_features import (
+    extract_features, 
+    extract_features_grid, 
+    extract_future_features_grid,
+    FEATURE_COLUMNS
+)
 
 
 def _apply_calibration(preds):
@@ -12,6 +20,30 @@ def _apply_calibration(preds):
         
     calibrated = 1 / (1 + np.exp(-preds / 4.0)) * 100.0
     return np.clip(calibrated, 0.0, 100.0).flatten()
+
+
+def smooth_grid_risks(grid_results, sigma=0.7):
+    if not grid_results:
+        return []
+
+    max_i = max(cell['i'] for cell in grid_results)
+    max_j = max(cell['j'] for cell in grid_results)
+
+    grid_matrix = np.full((max_i + 1, max_j + 1), np.nan)
+    for cell in grid_results:
+        grid_matrix[cell['i'], cell['j']] = cell['risk']
+
+    nan_mask = np.isnan(grid_matrix)
+    grid_matrix_filled = np.where(nan_mask, 0.0, grid_matrix)
+
+    smoothed = gaussian_filter(grid_matrix_filled, sigma=sigma)
+
+    for cell in grid_results:
+        i, j = cell['i'], cell['j']
+        if not nan_mask[i, j]:
+            cell['risk'] = round(float(np.clip(smoothed[i, j], 0.0, 100.0)), 1)
+
+    return grid_results
 
 
 def prediction_val(polygon, start_date, end_date):
@@ -55,7 +87,7 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
             "step_deg": cell["step_deg"]
         })
 
-    return grid_results
+    return smooth_grid_risks(grid_results, sigma=0.7)
 
 
 def prediction_future_grid(polygon, month, resolution_km=10):
@@ -90,22 +122,13 @@ def prediction_future_grid(polygon, month, resolution_km=10):
             "step_deg": cell["step_deg"]  
         })
 
-    return grid_results
+    return smooth_grid_risks(grid_results, sigma=0.7)
 
 
 def get_feature_importance():
-    features = [
-        "NDVI_now", "NDVI_anomaly", "wind_mean", "wind_max", "rain", "tempC", 
-        "soil_moisture", "evaporation", "slope", "soil_type", "biome", "month", 
-        "latitude", "longitude", "aridity_index", "is_dry_season", 
-        "ndvi_zscore", "ndvi_biome_anomaly"
-    ]
-    
     importances = ml_model.feature_importances_
-    
     feature_data = [
         {"name": f, "value": float(i)} 
-        for f, i in zip(features, importances)
+        for f, i in zip(FEATURE_COLUMNS, importances)
     ]
-    
     return sorted(feature_data, key=lambda x: x['value'], reverse=True)

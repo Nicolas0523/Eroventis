@@ -228,14 +228,15 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
               });
 
               layer.bindPopup(`
-                <div style="font-family: sans-serif; font-size: 11px;">
-                  <b>Erosion Risk:</b> ${displayRisk}%<br/>
+                <div style="font-family: system-ui, sans-serif; font-size: 12px; line-height: 1.5; color: #1e293b;">
+                  <strong style="font-size: 13px; color: #0f172a;">Wind Erosion Details</strong><br/>
+                  <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;"/>
+                  <b>Erosion Risk:</b> <span style="color: ${feature.properties.risk > 70 ? '#ef4444' : feature.properties.risk > 30 ? '#f59e0b' : '#10b981'}; font-weight: bold;">${parseFloat(feature.properties.risk || 0).toFixed(1)}%</span><br/>
                   <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
                   <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
-                  <b>Temp:</b> ${displayTemp} °C<br/>
-                  <b>Soil Moisture:</b> ${feature.properties.soil_moisture}<br/>
-                  <b>Soil Type:</b> ${feature.properties.soil_type}<br/>
-                  <b>Slope:</b> ${feature.properties.slope}
+                  <b>Temperature:</b> ${parseFloat(feature.properties.temp || 0).toFixed(1)} °C<br/>
+                  <b>Soil Moisture:</b> ${parseFloat(feature.properties.soil_moisture || 0).toFixed(3)}<br/>
+                  <b>Soil Type ID:</b> ${feature.properties.soil_type || 'N/A'}
                 </div>
               `);
             }}
