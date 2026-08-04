@@ -228,15 +228,14 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
               });
 
               layer.bindPopup(`
-                <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
-                  <strong style="font-size: 12px; color: #0f172a;">Wind Erosion Details</strong><br/>
-                  <hr style="margin: 4px 0; border: 0; border-top: 1px solid #e2e8f0;"/>
+                <div style="font-family: sans-serif; font-size: 11px;">
                   <b>Erosion Risk:</b> ${displayRisk}%<br/>
                   <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
                   <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
-                  <b>Temperature:</b> ${displayTemp} °C<br/>
-                  <b>Soil Moisture:</b> ${soilMoisture}<br/>
-                  <b>Slope:</b> ${slope}°
+                  <b>Temp:</b> ${displayTemp} °C<br/>
+                  <b>Soil Moisture:</b> ${feature.properties.soil_moisture}<br/>
+                  <b>Soil Type:</b> ${feature.properties.soil_type}<br/>
+                  <b>Slope:</b> ${feature.properties.slope}
                 </div>
               `);
             }}
