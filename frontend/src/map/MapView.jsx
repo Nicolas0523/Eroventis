@@ -6,9 +6,8 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// Градиент от Зеленого (0%) -> Желтого (35%) -> Оранжевого (65%) -> Красного (100%)
 const getDynamicCommercialColor = (value) => {
-  const t = Math.max(0, Math.min(1, value)); // Значение от 0.0 (0%) до 1.0 (100%)
+  const t = Math.max(0, Math.min(1, value));
   let r, g, b;
 
   if (t < 0.25) {
@@ -36,7 +35,8 @@ const getDynamicCommercialColor = (value) => {
   return `rgb(${r}, ${g}, ${b})`;
 };
 
-const canvasRenderer = L.canvas({ padding: 0.5 });
+// SVG рендерер предотвращает появление черных швов и полос при использовании blur
+const svgRenderer = L.svg();
 
 function HeatmapPane() {
   const map = useMap();
@@ -45,8 +45,8 @@ function HeatmapPane() {
     if (!pane) {
       pane = map.createPane("heatmapPane");
       pane.style.zIndex = 400;
-      pane.style.opacity = "0.80";
-      pane.style.filter = "blur(8px)";
+      pane.style.opacity = "0.85";
+      pane.style.filter = "blur(10px)";
       pane.style.pointerEvents = "auto";
     }
   }, [map]);
@@ -81,7 +81,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
-    // Пространственное сглаживание 3x3
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
@@ -106,12 +105,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = smoothedGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      const halfStep = step / 2;
+      // Небольшой микро-нахлест (+0.001) гарантирует отсутствие пиксельных зазоров между полигонами
+      const halfStep = step / 2 + 0.0005;
 
       const rawRisk = cell.smoothed_risk;
-
-      // АБСОЛЮТНАЯ НОРМАЛИЗАЦИЯ (0% - 100%):
-      // Если риски приходят в диапазоне 0..1, переводим в 0..100
       const pctValue = rawRisk <= 1.0 ? rawRisk * 100 : rawRisk;
       const normalizedRisk = Math.max(0, Math.min(1, pctValue / 100));
 
@@ -146,7 +143,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     };
   }, [analysis]);
 
-  // Уникальный ключ гарантирует моментальное перерисовывание слоя при изменении данных
   const layerKey = useMemo(() => {
     if (!analysis) return "empty_layer";
     return `${analysis.type || "type"}_${analysis.risk_score}_${analysis.start_date || ""}_${analysis.grid?.length}`;
@@ -199,7 +195,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           <GeoJSON
             key={layerKey}
             data={geoJsonData}
-            renderer={canvasRenderer}
+            renderer={svgRenderer}
             pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
