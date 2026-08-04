@@ -54,51 +54,89 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
   const geoJsonData = useMemo(() => {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
-    const features = analysis.grid
-      .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
-      .map((cell) => {
-        const step = (cell.step_deg || 0.09);
-        const halfStep = step / 2;
-        const rawRisk = cell.risk;
+    const rawGrid = analysis.grid.filter(
+      (cell) => cell.lat !== undefined && cell.lon !== undefined
+    );
 
-        // ИСПРАВЛЕНИЕ 1: Бэкенд шлет от 0 до 100. 
-        // Делим на 100, чтобы получить шкалу от 0.0 до 1.0 для функции цвета.
-        const normalizedRisk = Math.min(Math.max(rawRisk / 100.0, 0), 1);
+    // 1. Создаем быстрый индекс для сглаживания по ячейкам (i, j)
+    const cellMap = new Map();
+    rawGrid.forEach((c) => {
+      if (c.i !== undefined && c.j !== undefined) {
+        cellMap.set(`${c.i},${c.j}`, c.risk);
+      }
+    });
 
-        return {
-          type: "Feature",
-          properties: {
-            color: getDynamicCommercialColor(normalizedRisk),
-            raw_risk: rawRisk,
-            ndvi: cell.ndvi,
-            wind: cell.wind,
-            temp: cell.temp
-          },
-          geometry: {
-            type: "Polygon",
-            coordinates: [
-              [
-                [cell.lon - halfStep, cell.lat - halfStep],
-                [cell.lon + halfStep, cell.lat - halfStep],
-                [cell.lon + halfStep, cell.lat + halfStep],
-                [cell.lon - halfStep, cell.lat + halfStep],
-                [cell.lon - halfStep, cell.lat - halfStep],
-              ],
+    // 2. Пространственное сглаживание 3x3 (spatial kernel)
+    const smoothedGrid = rawGrid.map((cell) => {
+      let totalRisk = 0;
+      let totalWeight = 0;
+
+      if (cell.i !== undefined && cell.j !== undefined) {
+        for (let di = -1; di <= 1; di++) {
+          for (let dj = -1; dj <= 1; dj++) {
+            const val = cellMap.get(`${cell.i + di},${cell.j + dj}`);
+            if (val !== undefined && !isNaN(val)) {
+              // Центральная ячейка имеет больший вес (4), соседние — меньше (1)
+              const weight = di === 0 && dj === 0 ? 4 : 1;
+              totalRisk += val * weight;
+              totalWeight += weight;
+            }
+          }
+        }
+      }
+
+      const smoothedRisk =
+        totalWeight > 0 ? totalRisk / totalWeight : cell.risk;
+      return { ...cell, smoothed_risk: smoothedRisk };
+    });
+
+    // 3. Нормализация сглаженных рисков
+    const risks = smoothedGrid
+      .map((c) => c.smoothed_risk)
+      .filter((r) => r !== undefined && !isNaN(r));
+
+    const minRisk = risks.length > 0 ? Math.min(...risks) : 0;
+    const maxRisk = risks.length > 0 ? Math.max(...risks) : 100;
+    const range = maxRisk - minRisk;
+
+    const features = smoothedGrid.map((cell) => {
+      // Легкое перекрытие (1.08) сглаживает границы квадратов
+      const step = (cell.step_deg || 0.09) * 1.08;
+      const halfStep = step / 2;
+
+      const rawRisk = cell.smoothed_risk;
+      const normalizedRisk =
+        range > 0.001 ? (rawRisk - minRisk) / range : rawRisk / 100;
+
+      return {
+        type: "Feature",
+        properties: {
+          color: getDynamicCommercialColor(normalizedRisk),
+          raw_risk: cell.risk, // Исходное значение для попапа
+          smoothed_risk: cell.smoothed_risk,
+          ndvi: cell.ndvi,
+          wind: cell.wind,
+          temp: cell.temp,
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [cell.lon - halfStep, cell.lat - halfStep],
+              [cell.lon + halfStep, cell.lat - halfStep],
+              [cell.lon + halfStep, cell.lat + halfStep],
+              [cell.lon - halfStep, cell.lat + halfStep],
+              [cell.lon - halfStep, cell.lat - halfStep],
             ],
-          },
-        };
-      });
+          ],
+        },
+      };
+    });
 
     return {
       type: "FeatureCollection",
       features,
     };
-  }, [analysis]);
-
-
-  const geoJsonKey = useMemo(() => {
-    if (!analysis) return "no-data";
-    return `${analysis.analysis_type || "default"}_${analysis.start_date}_${analysis.end_date}_${analysis.grid?.length}_${Date.now()}`;
   }, [analysis]);
 
   return (
@@ -111,9 +149,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         zoomControl={true}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          maxZoom={19}
         />
 
         <FeatureGroup>
@@ -129,14 +166,14 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
               marker: false,
               polygon: {
                 allowIntersection: false,
-                drawError: { color: "#ef4444", message: "Lines cannot intersect!" },
-                shapeOptions: { 
-                  color: "#3b82f6",       
-                  weight: 3,             
-                  opacity: 0.9,          
-                  fillColor: "#3b82f6",   
-                  fillOpacity: 0.15,     
-                  dashArray: "6, 6"      
+                drawError: {
+                  color: "#ef4444",
+                  message: "Lines cannot intersect!",
+                },
+                shapeOptions: {
+                  color: "#3b82f6",
+                  weight: 3,
+                  fillOpacity: 0.1,
                 },
               },
             }}
@@ -145,29 +182,30 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
         {geoJsonData && (
           <GeoJSON
-            key={geoJsonKey}
+            key={JSON.stringify(analysis?.start_date || "grid")}
             data={geoJsonData}
             renderer={canvasRenderer}
+            options={{
+              stroke: false,
+              weight: 0,
+              color: "transparent",
+            }}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.65,  
+              fillOpacity: 0.72,
               stroke: false,
-              opacity: 0,
               weight: 0,
               color: "transparent",
             })}
             onEachFeature={(feature, layer) => {
-              // ИСПРАВЛЕНИЕ 2: raw_risk уже приходит как процент (например, 2.6).
-              // Мы больше не умножаем на 100 и не делим на 2.
-              const pctRisk = parseFloat(feature.properties.raw_risk).toFixed(1);
-              
+              const displayRisk = Number(feature.properties.raw_risk || 0).toFixed(1);
               layer.bindPopup(`
-                <div style="font-family: sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4;">
+                <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
                   <strong style="font-size: 12px; color: #0f172a;">Wind Erosion Details</strong><br/>
                   <hr style="margin: 4px 0; border: 0; border-top: 1px solid #e2e8f0;"/>
-                  <b>Erosion Risk:</b> ${Math.max(0, parseFloat(pctRisk))}%<br/>
-                  <b>NDVI Matrix:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
-                  <b>Max Wind Gust:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
+                  <b>Erosion Risk:</b> ${displayRisk}%<br/>
+                  <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
+                  <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
                   <b>Temperature:</b> ${parseFloat(feature.properties.temp || 0).toFixed(1)} °C
                 </div>
               `);

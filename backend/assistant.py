@@ -30,23 +30,26 @@ def generate_individual_response(
 
     if data is None:
         system_prompt = """
-You are WindGuard AI, an agricultural consultant specializing strictly in wind erosion.
+You are WindGuard AI, an agricultural consultant specializing strictly in wind erosion prevention.
 
-The user has NOT run an analysis yet. 
+The user has NOT executed a regional analysis yet.
 
 Politely guide them to:
-1. Select a geographical region on the map.
-2. Run the analysis.
-3. Ask any questions about wind erosion or soil protection once results are calculated.
+1. Draw a polygon on the map to define their land area.
+2. Click "Run AI Analysis".
+3. Ask specific questions about erosion risks, crop protection, or mitigation techniques.
 
 Rules:
 - Answer ONLY in English.
-- Keep the tone helpful and professional.
-- Max 60 words.
+- Professional, concise, welcoming tone.
+- Max 50 words.
 """
 
     else:
-        risk = round(data.get("risk_score", 0) * 100, 1)
+        # Учитываем, что risk_score уже может быть в процентах или [0, 1]
+        raw_risk = data.get("risk_score", 0)
+        risk = round(raw_risk * 100, 1) if raw_risk <= 1.0 else round(raw_risk, 1)
+        
         hotspots = data.get("hotspots_count", 0)
         context = data.get("context", {})
         feature_importances = data.get("feature_importances", {})
@@ -66,29 +69,29 @@ Rules:
         system_prompt = f"""
 You are WindGuard AI, an expert agronomist and environmental scientist specializing in soil conservation and wind erosion control.
 
-REGION ANALYSIS CONTEXT:
-- Calculated Average Wind Erosion Risk: {risk}%
-- Hotspots Detected: {hotspots}
-- Context Data: {context}
-- Top Environmental Factors:
+ANALYSIS CONTEXT FOR SELECTED POLYGON:
+- Overall Wind Erosion Risk: {risk}%
+- Critical Hotspots Count: {hotspots}
+- Regional Environmental Context: {context}
+- Top Risk Driving Factors (SHAP/Feature Importance):
 {top_features}
 
-INSTRUCTIONS & RULES:
-- Answer ONLY in English using clean Markdown formatting.
-- Focus DIRECTLY on answering the user's specific question.
-- Do NOT blindly start every response with a generic risk summary unless asked. Use the region analysis context above to inform and tailor your answers.
-- If the user asks for "how-to" advice or specific agricultural techniques (e.g., planting windbreaks, tillage methods, cover crops), provide clear, practical, step-by-step guidance.
-- Keep recommendations realistic for real-world farming.
-- NEVER invent fake statistics or cite unrelated natural disasters (floods, tsunamis, earthquakes).
-- Keep the response concise, structured, and under 180 words.
+INSTRUCTIONS FOR INDIVIDUALIZED RECOMMENDATIONS:
+1. Direct Answer: Answer the user's question directly.
+2. Tailored Mitigation Strategy: Analyze the dominant risk drivers listed above:
+   - If Wind Velocity / Wind Speed is high: Recommend shelterbelts (tree lines), strip cropping, or wind barrier layouts perpendicular to dominant winds.
+   - If Vegetation Index (NDVI) is low: Recommend cover cropping (rye, clover), stubble retention, and avoiding bare fallow.
+   - If Soil Moisture / Temperature / Aridity is critical: Recommend No-Till / Minimum Tillage, mulching, and moisture retention practices.
+3. Specificity: Provide concrete, actionable, region-specific steps rather than generic platitudes.
+4. Formatting: Use bullet points and bold key action terms. Keep response structured, professional, under 170 words, formatted in Markdown.
 """
 
     try:
         response = client.chat.completions.create(
             model=MODEL,
-            temperature=0.2,
+            temperature=0.25,
             top_p=0.9,
-            max_tokens=300,
+            max_tokens=350,
             messages=[
                 {
                     "role": "system",
@@ -107,9 +110,9 @@ INSTRUCTIONS & RULES:
             return answer.strip()
 
         return (
-            "- Wind erosion analysis completed.\n"
-            "- Preserve crop residues on the soil surface.\n"
-            "- Reduce intensive tillage to protect soil structure."
+            "- Regional wind erosion analysis active.\n"
+            "- Implement continuous soil cover and cover crops.\n"
+            "- Reduce tillage intensity to maintain soil structure."
         )
 
     except Exception as e:
