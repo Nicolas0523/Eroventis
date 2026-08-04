@@ -4,7 +4,7 @@ const API_BASE_URL = "https://windguard-1.onrender.com";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // Защита от зависания одиночных HTTP-запросов
+  timeout: 60000, 
   headers: {
     "Content-Type": "application/json",
   },
@@ -36,7 +36,7 @@ export const pollTaskStatus = async (jobId) => {
     throw new Error("Invalid Job ID for polling");
   }
 
-  const pollInterval = 4000; // Оптимизация: опрашиваем раз в 4 секунды, чтобы не забивать Render
+  const pollInterval = 4000; 
   const timeout = 180000; 
   const start = Date.now();
 
@@ -53,13 +53,12 @@ export const pollTaskStatus = async (jobId) => {
         throw new Error(task.error || "Analysis failed on server.");
       }
     } catch (err) {
-      // Если это наша ошибка сервера (task.status === "error") — пробрасываем дальше
       if (err.message && !err.message.includes("timeout")) {
          if (err.response?.data?.error) {
             throw new Error(err.response.data.error);
          }
       }
-      // Если одиночный запрос статуса мигнул из-за сети — не валим весь цикл, просто ждем следующий тик
+      
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));

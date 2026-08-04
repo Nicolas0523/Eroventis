@@ -114,7 +114,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
 
       // Конвертация температуры из Кельвинов в Цельсии, если значения > 100
-      let tempC = parseFloat(cell.temp || 0);
+      let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
       if (tempC > 100) {
         tempC = tempC - 273.15;
       }
@@ -123,10 +123,13 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         type: "Feature",
         properties: {
           color: getDynamicCommercialColor(normalizedRisk),
-          display_risk: riskPercent, // Единое значение риска для текста и цвета
-          ndvi: cell.ndvi,
-          wind: cell.wind,
+          display_risk: riskPercent,
+          ndvi: cell.ndvi ?? cell.raw_ndvi ?? 0,
+          wind: cell.wind ?? cell.raw_wind ?? 0,
           temp: tempC,
+          soil_moisture: cell.soil_moisture ?? 0.2,
+          slope: cell.slope ?? 1.0,
+          soil_type: cell.soil_type ?? 2.0,
         },
         geometry: {
           type: "Polygon",
@@ -213,6 +216,16 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             onEachFeature={(feature, layer) => {
               const displayRisk = Number(feature.properties.display_risk || 0).toFixed(1);
               const displayTemp = Number(feature.properties.temp || 0).toFixed(1);
+              const soilMoisture = Number(feature.properties.soil_moisture || 0).toFixed(3);
+              const slope = Number(feature.properties.slope || 0).toFixed(1);
+
+              layer.on({
+                click: () => {
+                  console.log("=== ДАННЫЕ ЯЧЕЙКИ ИЗ BACKEND ===");
+                  console.log("Координаты (Lon, Lat):", feature.geometry.coordinates);
+                  console.log("Свойства (Properties):", feature.properties);
+                },
+              });
 
               layer.bindPopup(`
                 <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
@@ -221,7 +234,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                   <b>Erosion Risk:</b> ${displayRisk}%<br/>
                   <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
                   <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
-                  <b>Temperature:</b> ${displayTemp} °C
+                  <b>Temperature:</b> ${displayTemp} °C<br/>
+                  <b>Soil Moisture:</b> ${soilMoisture}<br/>
+                  <b>Slope:</b> ${slope}°
                 </div>
               `);
             }}

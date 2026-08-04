@@ -179,7 +179,10 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
             "step_deg": resolution_km / 111.0,
             "raw_ndvi": _safe_val(props.get("NDVI_now"), 0.15),
             "raw_wind": _safe_val(props.get("wind_max"), 8.0), 
-            "raw_temp": _safe_val(props.get("tempC"), 25.0)
+            "raw_temp": _safe_val(props.get("tempC"), 25.0),
+            "soil_moisture": _safe_val(props.get("soil_moisture"), 0.2),
+            "slope": _safe_val(props.get("slope"), 1.0),
+            "soil_type": _safe_val(props.get("soil_type"), 2.0)
         })
 
     if not rows:
@@ -290,7 +293,10 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             "step_deg": resolution_km / 111.0,
             "raw_ndvi": _safe_val(props.get("NDVI_now"), 0.15),
             "raw_wind": _safe_val(props.get("wind_max"), 8.0),
-            "raw_temp": _safe_val(props.get("tempC"), 25.0)
+            "raw_temp": _safe_val(props.get("tempC"), 25.0),
+            "soil_moisture": _safe_val(props.get("soil_moisture"), 0.2),
+            "slope": _safe_val(props.get("slope"), 1.0),
+            "soil_type": _safe_val(props.get("soil_type"), 2.0)
         })
 
     if not rows:

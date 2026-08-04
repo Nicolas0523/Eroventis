@@ -41,7 +41,6 @@ export default function HotspotList({ analysis }) {
               <span style={{ color: "#fca5a5", fontWeight: "500" }}>
                 Hotspot #{idx + 1}
               </span>
-              {/* ИСПРАВЛЕНИЕ: Используем spot.max_risk и НЕ умножаем на 100 */}
               <span style={{ color: "#ffffff", fontWeight: "600" }}>
                 Risk: {Number(spot.max_risk || 0).toFixed(1)}%
               </span>

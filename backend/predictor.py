@@ -6,13 +6,11 @@ import numpy as np
 
 
 def _apply_calibration(preds):
-    """Калибрует сырые предсказания модели в честные проценты от 0 до 100."""
     preds = np.array(preds)
     
     if bias_shift is not None:
         preds = preds + bias_shift
         
-    # Смягченная сигмоида для плавного распределения от 0 до 100%
     calibrated = 1 / (1 + np.exp(-preds / 4.0)) * 100.0
         
     return np.clip(calibrated, 0.0, 100.0).flatten()
@@ -48,7 +46,8 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
 
     scaled, coords_meta = extract_features_grid(raw_data, polygon, month, resolution_km)
 
-    if len(scaled) == 0: return []
+    if len(scaled) == 0:
+        return []
 
     raw_preds = ml_model.predict(scaled)
     preds = _apply_calibration(raw_preds)
@@ -56,12 +55,18 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
     grid_results = []
     for cell, risk in zip(coords_meta, preds):
         grid_results.append({
+            "i": cell.get('i', 0),
+            "j": cell.get('j', 0),
             "lat": cell["lat"],
             "lon": cell["lon"],
             "risk": float(risk),
             "ndvi": cell["raw_ndvi"],
             "wind": cell["raw_wind"],
             "temp": cell["raw_temp"],
+            "soil_moisture": cell.get("soil_moisture", 0.2),
+            "soil_type": cell.get("soil_type", 2.0),
+            "slope": cell.get("slope", 1.0),
+            "step_deg": cell["step_deg"]
         })
 
     return grid_results
@@ -77,7 +82,6 @@ def prediction_future_grid(polygon, month, resolution_km=10):
     if len(scaled) == 0:
         return []
 
-    # Чистое предсказание модели на основе климатических сдвигов без искусственных накруток
     raw_preds = ml_model.predict(scaled)
     preds = _apply_calibration(raw_preds)
 
@@ -92,6 +96,9 @@ def prediction_future_grid(polygon, month, resolution_km=10):
             "ndvi": cell["raw_ndvi"],
             "wind": cell["raw_wind"],
             "temp": cell["raw_temp"],
+            "soil_moisture": cell.get("soil_moisture", 0.2),
+            "soil_type": cell.get("soil_type", 2.0),
+            "slope": cell.get("slope", 1.0),
             "step_deg": cell["step_deg"]  
         })
 
