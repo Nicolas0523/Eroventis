@@ -43,13 +43,13 @@ function HeatmapPane() {
     let pane = map.getPane("heatmapPane");
     if (!pane) {
       pane = map.createPane("heatmapPane");
-      pane.style.zIndex = 400;
-      pane.style.opacity = "0.85";
-      // Увеличенный blur маскирует любые пиксельные границы
-      pane.style.filter = "blur(22px)";
-      pane.style.webkitFilter = "blur(22px)";
-      pane.style.pointerEvents = "auto";
+      pane.style.zIndex = "400";
     }
+    // Настройки идеальной плавности и легкой прозрачности
+    pane.style.opacity = "0.88"; // 88% видимости (чуть-чуть прозрачный)
+    pane.style.filter = "blur(18px)"; // Плавный неразрывный градиент
+    pane.style.webkitFilter = "blur(18px)";
+    pane.style.pointerEvents = "auto";
   }, [map]);
   return null;
 }
@@ -82,7 +82,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
-    // 5x5 Гауссово сглаживание значений рисков по координатам сетки
+    // Математическое Гауссово сглаживание по соседним ячейкам 5x5
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
@@ -92,7 +92,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           for (let dj = -2; dj <= 2; dj++) {
             const val = cellMap.get(`${cell.i + di},${cell.j + dj}`);
             if (val !== undefined && !isNaN(val)) {
-              // Функция Гаусса для взвешивания соседей в зависимости от дистанции
               const weight = Math.exp(-(di * di + dj * dj) / 2);
               totalRisk += val * weight;
               totalWeight += weight;
