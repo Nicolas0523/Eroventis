@@ -6,8 +6,9 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
+// Градиент от Зеленого (0%) -> Желтого (35%) -> Оранжевого (65%) -> Красного (100%)
 const getDynamicCommercialColor = (value) => {
-  const t = Math.pow(Math.max(0, Math.min(1, value)), 0.6);
+  const t = Math.max(0, Math.min(1, value)); // Значение от 0.0 (0%) до 1.0 (100%)
   let r, g, b;
 
   if (t < 0.25) {
@@ -37,7 +38,6 @@ const getDynamicCommercialColor = (value) => {
 
 const canvasRenderer = L.canvas({ padding: 0.5 });
 
-// Создаем слой с CSS-размытием (blur) для стилизации под спутниковый растр
 function HeatmapPane() {
   const map = useMap();
   useEffect(() => {
@@ -46,7 +46,6 @@ function HeatmapPane() {
       pane = map.createPane("heatmapPane");
       pane.style.zIndex = 400;
       pane.style.opacity = "0.80";
-      // CSS-фильтр стирает границы квадратов и превращает их в единый тепловой поток
       pane.style.filter = "blur(8px)";
       pane.style.pointerEvents = "auto";
     }
@@ -82,7 +81,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
-    // Пространственное сглаживание значений 3x3
+    // Пространственное сглаживание 3x3
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
@@ -105,22 +104,16 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       return { ...cell, smoothed_risk: smoothedRisk };
     });
 
-    const risks = smoothedGrid
-      .map((c) => c.smoothed_risk)
-      .filter((r) => r !== undefined && !isNaN(r));
-
-    const minRisk = risks.length > 0 ? Math.min(...risks) : 0;
-    const maxRisk = risks.length > 0 ? Math.max(...risks) : 100;
-    const range = maxRisk - minRisk;
-
     const features = smoothedGrid.map((cell) => {
-      // Изучаем точный шаг без умножения, чтобы избежать двойной накладки слоев
       const step = cell.step_deg || 0.09;
       const halfStep = step / 2;
 
       const rawRisk = cell.smoothed_risk;
-      const normalizedRisk =
-        range > 0.001 ? (rawRisk - minRisk) / range : rawRisk / 100;
+
+      // АБСОЛЮТНАЯ НОРМАЛИЗАЦИЯ (0% - 100%):
+      // Если риски приходят в диапазоне 0..1, переводим в 0..100
+      const pctValue = rawRisk <= 1.0 ? rawRisk * 100 : rawRisk;
+      const normalizedRisk = Math.max(0, Math.min(1, pctValue / 100));
 
       return {
         type: "Feature",
@@ -151,6 +144,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       type: "FeatureCollection",
       features,
     };
+  }, [analysis]);
+
+  // Уникальный ключ гарантирует моментальное перерисовывание слоя при изменении данных
+  const layerKey = useMemo(() => {
+    if (!analysis) return "empty_layer";
+    return `${analysis.type || "type"}_${analysis.risk_score}_${analysis.start_date || ""}_${analysis.grid?.length}`;
   }, [analysis]);
 
   return (
@@ -198,7 +197,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
         {geoJsonData && (
           <GeoJSON
-            key={JSON.stringify(analysis?.start_date || "grid")}
+            key={layerKey}
             data={geoJsonData}
             renderer={canvasRenderer}
             pane="heatmapPane"
