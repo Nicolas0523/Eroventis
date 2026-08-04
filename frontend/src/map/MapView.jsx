@@ -45,9 +45,8 @@ function HeatmapPane() {
       pane = map.createPane("heatmapPane");
       pane.style.zIndex = "400";
     }
-    // Настройки идеальной плавности и легкой прозрачности
-    pane.style.opacity = "0.88"; // 88% видимости (чуть-чуть прозрачный)
-    pane.style.filter = "blur(18px)"; // Плавный неразрывный градиент
+    pane.style.opacity = "0.88";
+    pane.style.filter = "blur(18px)";
     pane.style.webkitFilter = "blur(18px)";
     pane.style.pointerEvents = "auto";
   }, [map]);
@@ -82,7 +81,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
-    // Математическое Гауссово сглаживание по соседним ячейкам 5x5
+    // 5x5 Гауссово сглаживание
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
@@ -109,19 +108,25 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       const step = cell.step_deg || 0.09;
       const halfStep = step / 2 + 0.001;
 
-      const rawRisk = cell.smoothed_risk;
-      const pctValue = rawRisk <= 1.0 ? rawRisk * 100 : rawRisk;
-      const normalizedRisk = Math.max(0, Math.min(1, pctValue / 100));
+      // Приведение риска к единому формату процента (0..100)
+      const rawRiskVal = cell.smoothed_risk !== undefined ? cell.smoothed_risk : cell.risk;
+      const riskPercent = rawRiskVal <= 1.0 ? rawRiskVal * 100 : rawRiskVal;
+      const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
+
+      // Конвертация температуры из Кельвинов в Цельсии, если значения > 100
+      let tempC = parseFloat(cell.temp || 0);
+      if (tempC > 100) {
+        tempC = tempC - 273.15;
+      }
 
       return {
         type: "Feature",
         properties: {
           color: getDynamicCommercialColor(normalizedRisk),
-          raw_risk: cell.risk,
-          smoothed_risk: cell.smoothed_risk,
+          display_risk: riskPercent, // Единое значение риска для текста и цвета
           ndvi: cell.ndvi,
           wind: cell.wind,
-          temp: cell.temp,
+          temp: tempC,
         },
         geometry: {
           type: "Polygon",
@@ -206,7 +211,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
               color: "transparent",
             })}
             onEachFeature={(feature, layer) => {
-              const displayRisk = Number(feature.properties.raw_risk || 0).toFixed(1);
+              const displayRisk = Number(feature.properties.display_risk || 0).toFixed(1);
+              const displayTemp = Number(feature.properties.temp || 0).toFixed(1);
+
               layer.bindPopup(`
                 <div style="font-family: sans-serif; font-size: 11px; color: #1e293b;">
                   <strong style="font-size: 12px; color: #0f172a;">Wind Erosion Details</strong><br/>
@@ -214,7 +221,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                   <b>Erosion Risk:</b> ${displayRisk}%<br/>
                   <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
                   <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
-                  <b>Temperature:</b> ${parseFloat(feature.properties.temp || 0).toFixed(1)} °C
+                  <b>Temperature:</b> ${displayTemp} °C
                 </div>
               `);
             }}
