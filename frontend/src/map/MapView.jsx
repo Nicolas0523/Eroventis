@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { MapContainer, TileLayer, GeoJSON, FeatureGroup } from "react-leaflet";
+import React, { useMemo, useEffect } from "react";
+import { MapContainer, TileLayer, GeoJSON, FeatureGroup, useMap } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
 import L from "leaflet";
 
@@ -37,6 +37,19 @@ const getDynamicCommercialColor = (value) => {
 
 const canvasRenderer = L.canvas({ padding: 0.5 });
 
+// Компонент создания слоя с прозрачностью без стыковых швов
+function HeatmapPane() {
+  const map = useMap();
+  useEffect(() => {
+    if (!map.getPane("heatmapPane")) {
+      const pane = map.createPane("heatmapPane");
+      pane.style.zIndex = 400;
+      pane.style.opacity = "0.75"; // Прозрачность регулируется здесь для всего слоя сразу
+    }
+  }, [map]);
+  return null;
+}
+
 export default function MapView({ analysis, setPolygon, mapRef }) {
   const _onCreate = (e) => {
     const { layerType, layer } = e;
@@ -58,7 +71,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       (cell) => cell.lat !== undefined && cell.lon !== undefined
     );
 
-    // 1. Создаем быстрый индекс для сглаживания по ячейкам (i, j)
     const cellMap = new Map();
     rawGrid.forEach((c) => {
       if (c.i !== undefined && c.j !== undefined) {
@@ -66,7 +78,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
-    // 2. Пространственное сглаживание 3x3 (spatial kernel)
+    // Сглаживание 3x3
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
@@ -76,7 +88,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           for (let dj = -1; dj <= 1; dj++) {
             const val = cellMap.get(`${cell.i + di},${cell.j + dj}`);
             if (val !== undefined && !isNaN(val)) {
-              // Центральная ячейка имеет больший вес (4), соседние — меньше (1)
               const weight = di === 0 && dj === 0 ? 4 : 1;
               totalRisk += val * weight;
               totalWeight += weight;
@@ -90,7 +101,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       return { ...cell, smoothed_risk: smoothedRisk };
     });
 
-    // 3. Нормализация сглаженных рисков
     const risks = smoothedGrid
       .map((c) => c.smoothed_risk)
       .filter((r) => r !== undefined && !isNaN(r));
@@ -100,8 +110,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     const range = maxRisk - minRisk;
 
     const features = smoothedGrid.map((cell) => {
-      // Легкое перекрытие (1.08) сглаживает границы квадратов
-      const step = (cell.step_deg || 0.09) * 1.08;
+      // Минимальный перехлест (1.02) перекрывает субпиксельные зазоры
+      const step = (cell.step_deg || 0.09) * 1.02;
       const halfStep = step / 2;
 
       const rawRisk = cell.smoothed_risk;
@@ -112,7 +122,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         type: "Feature",
         properties: {
           color: getDynamicCommercialColor(normalizedRisk),
-          raw_risk: cell.risk, // Исходное значение для попапа
+          raw_risk: cell.risk,
           smoothed_risk: cell.smoothed_risk,
           ndvi: cell.ndvi,
           wind: cell.wind,
@@ -153,6 +163,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
 
+        <HeatmapPane />
+
         <FeatureGroup>
           <EditControl
             position="topleft"
@@ -185,14 +197,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             key={JSON.stringify(analysis?.start_date || "grid")}
             data={geoJsonData}
             renderer={canvasRenderer}
-            options={{
-              stroke: false,
-              weight: 0,
-              color: "transparent",
-            }}
+            pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.72,
+              fillOpacity: 1.0, // 100% заливка убирает сетку и стыки
               stroke: false,
               weight: 0,
               color: "transparent",
