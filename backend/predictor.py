@@ -23,11 +23,14 @@ def _apply_calibration(preds):
 
 
 def smooth_grid_risks(grid_results, sigma=1.2):
-    if not grid_results:
+    if not grid_results or len(grid_results) == 0:
         return []
 
-    unique_lats = sorted(list(set(round(cell['lat'], 5) for cell in grid_results)), reverse=True)
-    unique_lons = sorted(list(set(round(cell['lon'], 5))))
+    unique_lats = sorted(list(set(round(item['lat'], 5) for item in grid_results)), reverse=True)
+    unique_lons = sorted(list(set(round(item['lon'], 5))))
+
+    if not unique_lats or not unique_lons:
+        return grid_results
 
     lat_map = {lat: idx for idx, lat in enumerate(unique_lats)}
     lon_map = {lon: idx for idx, lon in enumerate(unique_lons)}
@@ -38,10 +41,10 @@ def smooth_grid_risks(grid_results, sigma=1.2):
     grid_matrix = np.zeros((n_rows, n_cols))
     weight_mask = np.zeros((n_rows, n_cols))
 
-    for cell in grid_results:
-        r = lat_map[round(cell['lat'], 5)]
-        c = lon_map[round(cell['lon'], 5)]
-        grid_matrix[r, c] = cell['risk']
+    for item in grid_results:
+        r = lat_map[round(item['lat'], 5)]
+        c = lon_map[round(item['lon'], 5)]
+        grid_matrix[r, c] = item['risk']
         weight_mask[r, c] = 1.0
 
     smoothed_vals = gaussian_filter(grid_matrix, sigma=sigma, mode='nearest')
@@ -54,10 +57,10 @@ def smooth_grid_risks(grid_results, sigma=1.2):
         where=smoothed_weights > 0
     )
 
-    for cell in grid_results:
-        r = lat_map[round(cell['lat'], 5)]
-        c = lon_map[round(cell['lon'], 5)]
-        cell['risk'] = round(float(np.clip(normalized_smoothed[r, c], 0.0, 100.0)), 1)
+    for item in grid_results:
+        r = lat_map[round(item['lat'], 5)]
+        c = lon_map[round(item['lon'], 5)]
+        item['risk'] = round(float(np.clip(normalized_smoothed[r, c], 0.0, 100.0)), 1)
 
     return grid_results
 
@@ -80,65 +83,64 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
 
     scaled, coords_meta = extract_features_grid(raw_data, polygon, month, resolution_km)
 
-    if len(scaled) == 0:
+    if scaled is None or len(scaled) == 0 or not coords_meta:
         return []
 
     raw_preds = ml_model.predict(scaled)
     preds = _apply_calibration(raw_preds)
 
     grid_results = []
-    for cell, risk in zip(coords_meta, preds):
+    for meta_item, risk in zip(coords_meta, preds):
         grid_results.append({
-            "i": cell.get('i', 0),
-            "j": cell.get('j', 0),
-            "lat": cell["lat"],
-            "lon": cell["lon"],
+            "i": meta_item.get('i', 0),
+            "j": meta_item.get('j', 0),
+            "lat": meta_item["lat"],
+            "lon": meta_item["lon"],
             "risk": float(risk),
-            "ndvi": cell["raw_ndvi"],
-            "wind": cell["raw_wind"],
-            "temp": cell["raw_temp"],
-            "soil_moisture": cell.get("soil_moisture", 0.2),
-            "soil_type": cell.get("soil_type", 2.0),
-            "slope": cell.get("slope", 1.0),
-            "step_deg": cell["step_deg"]
+            "ndvi": meta_item["raw_ndvi"],
+            "wind": meta_item["raw_wind"],
+            "temp": meta_item["raw_temp"],
+            "soil_moisture": meta_item.get("soil_moisture", 0.2),
+            "soil_type": meta_item.get("soil_type", 2.0),
+            "slope": meta_item.get("slope", 1.0),
+            "step_deg": meta_item["step_deg"]
         })
 
-    return smooth_grid_risks(grid_results, sigma=0.7)
+    return smooth_grid_risks(grid_results, sigma=1.2)
 
 
 def prediction_future_grid(polygon, month, resolution_km=10):
     target_month = month if month in [5, 6, 7, 8, 9] else 7
-
     raw_data = load_raw_data_multi_year(polygon, "2025-06-01", "2025-08-31") 
 
     scaled, coords_meta = extract_future_features_grid(
         raw_data, polygon, target_month, resolution_km=resolution_km
     )
 
-    if len(scaled) == 0:
+    if scaled is None or len(scaled) == 0 or not coords_meta:
         return []
 
     raw_preds = ml_model.predict(scaled)
     preds = _apply_calibration(raw_preds)
 
     grid_results = []
-    for cell, risk in zip(coords_meta, preds):
+    for meta_item, risk in zip(coords_meta, preds):
         grid_results.append({
-            "i": cell.get('i', 0),
-            "j": cell.get('j', 0),
-            "lat": cell["lat"],
-            "lon": cell["lon"],
+            "i": meta_item.get('i', 0),
+            "j": meta_item.get('j', 0),
+            "lat": meta_item["lat"],
+            "lon": meta_item["lon"],
             "risk": float(risk),
-            "ndvi": cell["raw_ndvi"],
-            "wind": cell["raw_wind"],
-            "temp": cell["raw_temp"],
-            "soil_moisture": cell.get("soil_moisture", 0.2),
-            "soil_type": cell.get("soil_type", 2.0),
-            "slope": cell.get("slope", 1.0),
-            "step_deg": cell["step_deg"]  
+            "ndvi": meta_item["raw_ndvi"],
+            "wind": meta_item["raw_wind"],
+            "temp": meta_item["raw_temp"],
+            "soil_moisture": meta_item.get("soil_moisture", 0.2),
+            "soil_type": meta_item.get("soil_type", 2.0),
+            "slope": meta_item.get("slope", 1.0),
+            "step_deg": meta_item["step_deg"]  
         })
 
-    return smooth_grid_risks(grid_results, sigma=0.7)
+    return smooth_grid_risks(grid_results, sigma=1.2)
 
 
 def get_feature_importance():
