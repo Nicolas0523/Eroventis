@@ -35,7 +35,6 @@ const getDynamicCommercialColor = (value) => {
   return `rgb(${r}, ${g}, ${b})`;
 };
 
-// SVG рендерер предотвращает появление черных швов и полос при использовании blur
 const svgRenderer = L.svg();
 
 function HeatmapPane() {
@@ -46,7 +45,9 @@ function HeatmapPane() {
       pane = map.createPane("heatmapPane");
       pane.style.zIndex = 400;
       pane.style.opacity = "0.85";
-      pane.style.filter = "blur(10px)";
+      // Увеличенный blur маскирует любые пиксельные границы
+      pane.style.filter = "blur(22px)";
+      pane.style.webkitFilter = "blur(22px)";
       pane.style.pointerEvents = "auto";
     }
   }, [map]);
@@ -81,16 +82,18 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       }
     });
 
+    // 5x5 Гауссово сглаживание значений рисков по координатам сетки
     const smoothedGrid = rawGrid.map((cell) => {
       let totalRisk = 0;
       let totalWeight = 0;
 
       if (cell.i !== undefined && cell.j !== undefined) {
-        for (let di = -1; di <= 1; di++) {
-          for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -2; di <= 2; di++) {
+          for (let dj = -2; dj <= 2; dj++) {
             const val = cellMap.get(`${cell.i + di},${cell.j + dj}`);
             if (val !== undefined && !isNaN(val)) {
-              const weight = di === 0 && dj === 0 ? 4 : 1;
+              // Функция Гаусса для взвешивания соседей в зависимости от дистанции
+              const weight = Math.exp(-(di * di + dj * dj) / 2);
               totalRisk += val * weight;
               totalWeight += weight;
             }
@@ -105,8 +108,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = smoothedGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      // Небольшой микро-нахлест (+0.001) гарантирует отсутствие пиксельных зазоров между полигонами
-      const halfStep = step / 2 + 0.0005;
+      const halfStep = step / 2 + 0.001;
 
       const rawRisk = cell.smoothed_risk;
       const pctValue = rawRisk <= 1.0 ? rawRisk * 100 : rawRisk;
