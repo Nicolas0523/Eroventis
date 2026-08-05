@@ -1,51 +1,64 @@
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import { MapContainer, TileLayer, GeoJSON, FeatureGroup, useMap } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
 import L from "leaflet";
-import "leaflet.heat"; // Подключаем библиотеку тепловой карты
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// --- НОВЫЙ КОМПОНЕНТ ПЛАВНОЙ ТЕПЛОВОЙ КАРТЫ ---
+// --- КОМПОНЕНТ ДИНАМИЧЕСКОЙ ЗАГРУЗКИ И ОТРИСОВКИ НЕЙТИВНОЙ ТЕПЛОВОЙ КАРТЫ ---
 function TrueHeatmapLayer({ grid }) {
   const map = useMap();
+  const [isHeatLoaded, setIsHeatLoaded] = useState(!!L.heatLayer);
 
+  // 1. Загружаем скрипт leaflet-heat налету, чтобы Vite не выдавал ошибку сборки Rollup
   useEffect(() => {
-    if (!grid || grid.length === 0) return;
+    if (L.heatLayer) {
+      setIsHeatLoaded(true);
+      return;
+    }
 
-    // 1. Собираем точки для тепловой карты: [широта, долгота, интенсивность]
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js";
+    script.async = true;
+    script.onload = () => setIsHeatLoaded(true);
+    document.head.appendChild(script);
+  }, []);
+
+  // 2. Рендерим Canvas тепловую карту, когда скрипт и данные готовы
+  useEffect(() => {
+    if (!isHeatLoaded || !grid || grid.length === 0 || !L.heatLayer) return;
+
+    // Собираем точки: [lat, lon, intensity]
     const heatPoints = grid
       .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
       .map((cell) => {
         const risk = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
-        // Нормализуем риск от 0.0 до 1.0
         const intensity = Math.max(0, Math.min(1, risk / 100));
         return [cell.lat, cell.lon, intensity];
       });
 
-    // 2. Создаем слой тепловой карты с красивым градиентом
+    // Настраиваем красивый мягкий градиент
     const heatLayer = L.heatLayer(heatPoints, {
-      radius: 35, // Размер пятна от одной ячейки (можно менять)
-      blur: 40,   // Сила размытия (создает тот самый плавный переход)
+      radius: 35, // Размер пятна ячейки
+      blur: 40,   // Сила сглаживания для эффекта погодного радара
       maxZoom: 10,
-      max: 1.0,   // Максимальное значение интенсивности
+      max: 1.0,
       gradient: {
         0.15: '#10b981', // Зеленый (низкий риск)
         0.40: '#84cc16', // Салатовый
-        0.60: '#eab308', // Желтый (повышенный)
-        0.80: '#f97316', // Оранжевый (высокий)
-        1.00: '#ef4444'  // Красный (критический)
+        0.60: '#eab308', // Желтый
+        0.80: '#f97316', // Оранжевый
+        1.00: '#ef4444'  // Красный (высокий риск)
       }
     });
 
     heatLayer.addTo(map);
 
-    // Очистка при размонтировании или обновлении данных
     return () => {
       map.removeLayer(heatLayer);
     };
-  }, [map, grid]);
+  }, [map, grid, isHeatLoaded]);
 
   return null;
 }
@@ -64,6 +77,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     setPolygon(null);
   };
 
+  // Невидимый GeoJSON слой для сохранения кликабельных попапов
   const geoJsonData = useMemo(() => {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
@@ -130,7 +144,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
 
-        {/* Добавляем наш новый плавный тепловой слой */}
+        {/* Плавный Canvas Heatmap Слой */}
         {analysis?.grid && <TrueHeatmapLayer grid={analysis.grid} />}
 
         <FeatureGroup>
@@ -160,14 +174,14 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           />
         </FeatureGroup>
 
-        {/* Невидимая сетка GeoJSON для сохранения работы Попапов при клике! */}
+        {/* Прозрачный интерфейсный слой для кликов и попапов */}
         {geoJsonData && (
           <GeoJSON
             key={layerKey}
             data={geoJsonData}
             style={() => ({
-              fillOpacity: 0, // Делаем квадраты невидимыми
-              stroke: false,  // Убираем границы
+              fillOpacity: 0,
+              stroke: false,
               weight: 0,
             })}
             onEachFeature={(feature, layer) => {
