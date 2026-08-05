@@ -173,9 +173,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             style={(feature) => ({
               fillColor: feature.properties.color,
               fillOpacity: 0.85, 
-              stroke: true,
-              color: feature.properties.color, // Скрываем сетку за счет совпадения цвета обводки и заливки
-              weight: 1, 
+              stroke: false,
+              weight: 0, 
             })}
             onEachFeature={(feature, layer) => {
               const formatNumber = (val, decimals = 1) => 
