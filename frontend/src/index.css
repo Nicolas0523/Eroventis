@@ -129,3 +129,29 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Убираем белый фон, рамку и тень у обертки Leaflet попапа */
+.leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+/* Убираем стандартные отступы вокруг твоего контента */
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: normal !important;
+}
+
+/* Красим нижний "хвостик" (треугольник) в цвет твоего темного дизайна */
+.leaflet-popup-tip {
+  background: #0f172a !important; /* Темно-синий из твоего дизайна */
+  box-shadow: none !important;
+}
+
+/* (По желанию) Делаем стандартный крестик закрытия менее заметным */
+.leaflet-popup-close-button {
+  color: #94a3b8 !important;
+  padding-top: 4px !important;
+  padding-right: 4px !important;
+}

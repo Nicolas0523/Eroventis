@@ -33,6 +33,74 @@ def _scale_aai_to_percent(preds):
     return np.clip(risk_percent, 0.0, 100.0).flatten()
 
 
+def smooth_grid_risks(grid_results, sigma=1.0):
+    if not grid_results or not isinstance(grid_results, list) or len(grid_results) == 0:
+        return []
+
+    lats = [entry.get('lat') for entry in grid_results if isinstance(entry, dict) and 'lat' in entry]
+    lons = [entry.get('lon') for entry in grid_results if isinstance(entry, dict) and 'lon' in entry]
+
+    if not lats or not lons:
+        return grid_results
+
+    unique_lats = sorted(list(set(round(l, 5) for l in lats if l is not None)), reverse=True)
+    unique_lons = sorted(list(set(round(l, 5) for l in lons if l is not None)))
+
+    if not unique_lats or not unique_lons:
+        return grid_results
+
+    lat_map = {lat: idx for idx, lat in enumerate(unique_lats)}
+    lon_map = {lon: idx for idx, lon in enumerate(unique_lons)}
+
+    n_rows = len(unique_lats)
+    n_cols = len(unique_lons)
+
+    grid_matrix = np.zeros((n_rows, n_cols))
+    weight_mask = np.zeros((n_rows, n_cols))
+
+    for entry in grid_results:
+        if not isinstance(entry, dict):
+            continue
+        lat_val = entry.get('lat')
+        lon_val = entry.get('lon')
+        if lat_val is None or lon_val is None:
+            continue
+
+        r = lat_map.get(round(lat_val, 5))
+        c = lon_map.get(round(lon_val, 5))
+        
+        if r is not None and c is not None:
+            risk_val = entry.get('risk_percent', entry.get('risk', 0.0))
+            grid_matrix[r, c] = risk_val
+            weight_mask[r, c] = 1.0
+
+    smoothed_vals = gaussian_filter(grid_matrix, sigma=sigma, mode='nearest')
+    smoothed_weights = gaussian_filter(weight_mask, sigma=sigma, mode='nearest')
+
+    normalized_smoothed = np.divide(
+        smoothed_vals, 
+        smoothed_weights, 
+        out=np.zeros_like(smoothed_vals), 
+        where=smoothed_weights > 0
+    )
+
+    for entry in grid_results:
+        if not isinstance(entry, dict):
+            continue
+        lat_val = entry.get('lat')
+        lon_val = entry.get('lon')
+        if lat_val is None or lon_val is None:
+            continue
+
+        r = lat_map.get(round(lat_val, 5))
+        c = lon_map.get(round(lon_val, 5))
+
+        if r is not None and c is not None:
+            smoothed_val = round(float(np.clip(normalized_smoothed[r, c], 0.0, 100.0)), 1)
+            entry['risk_percent'] = smoothed_val
+            entry['risk'] = smoothed_val
+
+    return grid_results
 
 def prediction_val(polygon, start_date, end_date):
     raw_data = load_raw_data_multi_year(polygon, start_date, end_date)
@@ -80,6 +148,7 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
             "step_deg": meta_entry.get("step_deg", 0.09)
         })
 
+    grid_results = smooth_grid_risks(grid_results, sigma=1.0)
     return grid_results
 
 
@@ -116,6 +185,7 @@ def prediction_future_grid(polygon, month, resolution_km=10):
             "step_deg": meta_entry.get("step_deg", 0.09)
         })
 
+    grid_results = smooth_grid_risks(grid_results, sigma=1.0)
     return grid_results
 
 

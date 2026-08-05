@@ -6,7 +6,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// Плавная палитра для монолитной сетки
+// Плавная палитра для научной тепловой карты
 const getDynamicCommercialColor = (value) => {
   const t = Math.max(0, Math.min(1, value));
   let r, g, b;
@@ -61,8 +61,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      // Трюк 1: Делаем квадраты шире на 1%, чтобы они слипались без швов
-      const halfStep = (step / 2) * 1.01;
+      // Трюк: Делаем квадраты шире на 2%, чтобы они наложились друг на друга без швов
+      const halfStep = (step / 2) * 1.02;
 
       const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
@@ -155,13 +155,16 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={svgRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.85, // Оптимальная прозрачность
+              fillOpacity: 0.85, 
               stroke: true,
-              // Трюк 2: Обводка цветом заливки убирает визуальную сетку
-              color: feature.properties.color, 
+              color: feature.properties.color, // Обводка цветом ячейки маскирует сетку
               weight: 1, 
             })}
             onEachFeature={(feature, layer) => {
+              // Бонус: округляем Soil Type и другие параметры для чистоты интерфейса
+              const formatNumber = (val, decimals = 1) => 
+                typeof val === 'number' ? val.toFixed(decimals) : (val || '0');
+
               layer.bindPopup(`
                 <div style="font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.6; color: #f8fafc; background: #0f172a; padding: 4px; border-radius: 8px; min-width: 180px;">
                   <div style="font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 4px;">
@@ -170,28 +173,28 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                     <span style="color: #94a3b8;">Risk:</span> 
                     <span style="color: ${feature.properties.risk > 70 ? '#ef4444' : feature.properties.risk > 30 ? '#f59e0b' : '#10b981'}; font-weight: bold;">
-                      ${parseFloat(feature.properties.risk || 0).toFixed(1)}%
+                      ${formatNumber(feature.properties.risk, 1)}%
                     </span>
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                     <span style="color: #94a3b8;">NDVI:</span> 
-                    <span>${parseFloat(feature.properties.ndvi || 0).toFixed(3)}</span>
+                    <span>${formatNumber(feature.properties.ndvi, 3)}</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                     <span style="color: #94a3b8;">Max Wind:</span> 
-                    <span>${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s</span>
+                    <span>${formatNumber(feature.properties.wind, 1)} m/s</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                     <span style="color: #94a3b8;">Temperature:</span> 
-                    <span>${parseFloat(feature.properties.temp || 0).toFixed(1)} °C</span>
+                    <span>${formatNumber(feature.properties.temp, 1)} °C</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                     <span style="color: #94a3b8;">Soil Moisture:</span> 
-                    <span>${parseFloat(feature.properties.soil_moisture || 0).toFixed(3)}</span>
+                    <span>${formatNumber(feature.properties.soil_moisture, 3)}</span>
                   </div>
                   <div style="display: flex; justify-content: space-between;">
                     <span style="color: #94a3b8;">Soil Type:</span> 
-                    <span>${feature.properties.soil_type || 'N/A'}</span>
+                    <span>${formatNumber(feature.properties.soil_type, 1)}</span>
                   </div>
                 </div>
               `);
