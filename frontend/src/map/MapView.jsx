@@ -47,9 +47,9 @@ function HeatmapPane() {
       pane.style.zIndex = "400";
     }
     // Эффект легкого свечения и кинематографичности
-    pane.style.opacity = "0.92";
-    pane.style.filter = "blur(8px)";
-    pane.style.webkitFilter = "blur(8px)";
+    pane.style.opacity = "0.95";
+    pane.style.filter = "blur(18px)";
+    pane.style.webkitFilter = "blur(18px)";
     pane.style.pointerEvents = "auto";
   }, [map]);
   return null;
@@ -179,10 +179,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.82, // Полупрозрачность для красивого смешивания цветов
-              stroke: true,
-              weight: 0.5,
-              color: feature.properties.color, // Обводка в тон цвета ячейки убирает грубые сетчатые швы
+              fillOpacity: 1.0, // Полупрозрачность для красивого смешивания цветов
+              stroke: false,
+              weight: 0,
             })}
             onEachFeature={(feature, layer) => {
               // Премиальный дизайн попапа в стиле SaaS / Dark Theme
