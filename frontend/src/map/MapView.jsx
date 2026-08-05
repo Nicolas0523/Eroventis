@@ -46,8 +46,8 @@ function HeatmapPane() {
       pane.style.zIndex = "400";
     }
     pane.style.opacity = "0.88";
-    pane.style.filter = "blur(18px)";
-    pane.style.webkitFilter = "blur(18px)";
+    pane.style.filter = "blur(12px)";
+    pane.style.webkitFilter = "blur(12px)";
     pane.style.pointerEvents = "auto";
   }, [map]);
   return null;
@@ -74,46 +74,15 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       (cell) => cell.lat !== undefined && cell.lon !== undefined
     );
 
-    const cellMap = new Map();
-    rawGrid.forEach((c) => {
-      if (c.i !== undefined && c.j !== undefined) {
-        cellMap.set(`${c.i},${c.j}`, c.risk);
-      }
-    });
-
-    // 5x5 Гауссово сглаживание
-    const smoothedGrid = rawGrid.map((cell) => {
-      let totalRisk = 0;
-      let totalWeight = 0;
-
-      if (cell.i !== undefined && cell.j !== undefined) {
-        for (let di = -2; di <= 2; di++) {
-          for (let dj = -2; dj <= 2; dj++) {
-            const val = cellMap.get(`${cell.i + di},${cell.j + dj}`);
-            if (val !== undefined && !isNaN(val)) {
-              const weight = Math.exp(-(di * di + dj * dj) / 2);
-              totalRisk += val * weight;
-              totalWeight += weight;
-            }
-          }
-        }
-      }
-
-      const smoothedRisk =
-        totalWeight > 0 ? totalRisk / totalWeight : cell.risk;
-      return { ...cell, smoothed_risk: smoothedRisk };
-    });
-
-    const features = smoothedGrid.map((cell) => {
+    const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
       const halfStep = step / 2 + 0.001;
 
-      // Приведение риска к единому формату процента (0..100)
-      const rawRiskVal = cell.smoothed_risk !== undefined ? cell.smoothed_risk : cell.risk;
+      // Берём риск, сгенерированный бэкендом (он уже сглажен и переведен в шкалу 0-100)
+      const rawRiskVal = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk !== undefined ? cell.risk : 0);
       const riskPercent = rawRiskVal <= 1.0 ? rawRiskVal * 100 : rawRiskVal;
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
 
-      // Конвертация температуры из Кельвинов в Цельсии, если значения > 100
       let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
       if (tempC > 100) {
         tempC = tempC - 273.15;
@@ -123,7 +92,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         type: "Feature",
         properties: {
           color: getDynamicCommercialColor(normalizedRisk),
-          display_risk: riskPercent,
+          risk: riskPercent, // Исправлено: теперь ключ называется risk для попапа
           ndvi: cell.ndvi ?? cell.raw_ndvi ?? 0,
           wind: cell.wind ?? cell.raw_wind ?? 0,
           temp: tempC,
@@ -154,7 +123,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
   const layerKey = useMemo(() => {
     if (!analysis) return "empty_layer";
-    return `${analysis.type || "type"}_${analysis.risk_score}_${analysis.start_date || ""}_${analysis.grid?.length}`;
+    return `${analysis.type || "type"}_${analysis.risk_score || 0}_${analysis.start_date || ""}_${analysis.grid?.length || 0}`;
   }, [analysis]);
 
   return (
@@ -208,25 +177,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 1.0,
+              fillOpacity: 0.85, // Сделано видимым (было 1.0, но блурить прозрачное бессмысленно)
               stroke: false,
               weight: 0,
               color: "transparent",
             })}
             onEachFeature={(feature, layer) => {
-              const displayRisk = Number(feature.properties.display_risk || 0).toFixed(1);
-              const displayTemp = Number(feature.properties.temp || 0).toFixed(1);
-              const soilMoisture = Number(feature.properties.soil_moisture || 0).toFixed(3);
-              const slope = Number(feature.properties.slope || 0).toFixed(1);
-
-              layer.on({
-                click: () => {
-                  console.log("=== ДАННЫЕ ЯЧЕЙКИ ИЗ BACKEND ===");
-                  console.log("Координаты (Lon, Lat):", feature.geometry.coordinates);
-                  console.log("Свойства (Properties):", feature.properties);
-                },
-              });
-
               layer.bindPopup(`
                 <div style="font-family: system-ui, sans-serif; font-size: 12px; line-height: 1.5; color: #1e293b;">
                   <strong style="font-size: 13px; color: #0f172a;">Wind Erosion Details</strong><br/>
