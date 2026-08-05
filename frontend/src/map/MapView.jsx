@@ -1,67 +1,42 @@
-import React, { useMemo, useEffect, useState } from "react";
-import { MapContainer, TileLayer, GeoJSON, FeatureGroup, useMap } from "react-leaflet";
+import React, { useMemo } from "react";
+import { MapContainer, TileLayer, GeoJSON, FeatureGroup } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
 import L from "leaflet";
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// --- КОМПОНЕНТ ДИНАМИЧЕСКОЙ ЗАГРУЗКИ И ОТРИСОВКИ НЕЙТИВНОЙ ТЕПЛОВОЙ КАРТЫ ---
-function TrueHeatmapLayer({ grid }) {
-  const map = useMap();
-  const [isHeatLoaded, setIsHeatLoaded] = useState(!!L.heatLayer);
+// Плавная палитра для монолитной сетки
+const getDynamicCommercialColor = (value) => {
+  const t = Math.max(0, Math.min(1, value));
+  let r, g, b;
 
-  // 1. Загружаем скрипт leaflet-heat налету, чтобы Vite не выдавал ошибку сборки Rollup
-  useEffect(() => {
-    if (L.heatLayer) {
-      setIsHeatLoaded(true);
-      return;
-    }
+  if (t < 0.25) {
+    const localT = t / 0.25;
+    r = Math.round(16 + (90 - 16) * localT);
+    g = Math.round(185 + (210 - 185) * localT);
+    b = Math.round(129 + (50 - 129) * localT);
+  } else if (t < 0.5) {
+    const localT = (t - 0.25) / 0.25;
+    r = Math.round(90 + (245 - 90) * localT);
+    g = Math.round(210 + (210 - 210) * localT);
+    b = Math.round(50 + (30 - 50) * localT);
+  } else if (t < 0.75) {
+    const localT = (t - 0.5) / 0.25;
+    r = Math.round(245 + (249 - 245) * localT);
+    g = Math.round(210 + (115 - 210) * localT);
+    b = Math.round(30 + (22 - 30) * localT);
+  } else {
+    const localT = (t - 0.75) / 0.25;
+    r = Math.round(249 + (220 - 249) * localT);
+    g = Math.round(115 + (38 - 115) * localT);
+    b = Math.round(22 + (38 - 22) * localT);
+  }
 
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js";
-    script.async = true;
-    script.onload = () => setIsHeatLoaded(true);
-    document.head.appendChild(script);
-  }, []);
+  return `rgb(${r}, ${g}, ${b})`;
+};
 
-  // 2. Рендерим Canvas тепловую карту, когда скрипт и данные готовы
-  useEffect(() => {
-    if (!isHeatLoaded || !grid || grid.length === 0 || !L.heatLayer) return;
-
-    // Собираем точки: [lat, lon, intensity]
-    const heatPoints = grid
-      .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
-      .map((cell) => {
-        const risk = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
-        const intensity = Math.max(0, Math.min(1, risk / 100));
-        return [cell.lat, cell.lon, intensity];
-      });
-
-    // Настраиваем красивый мягкий градиент
-    const heatLayer = L.heatLayer(heatPoints, {
-      radius: 35, // Размер пятна ячейки
-      blur: 40,   // Сила сглаживания для эффекта погодного радара
-      maxZoom: 10,
-      max: 1.0,
-      gradient: {
-        0.15: '#10b981', // Зеленый (низкий риск)
-        0.40: '#84cc16', // Салатовый
-        0.60: '#eab308', // Желтый
-        0.80: '#f97316', // Оранжевый
-        1.00: '#ef4444'  // Красный (высокий риск)
-      }
-    });
-
-    heatLayer.addTo(map);
-
-    return () => {
-      map.removeLayer(heatLayer);
-    };
-  }, [map, grid, isHeatLoaded]);
-
-  return null;
-}
+const svgRenderer = L.svg();
 
 export default function MapView({ analysis, setPolygon, mapRef }) {
   const _onCreate = (e) => {
@@ -77,7 +52,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     setPolygon(null);
   };
 
-  // Невидимый GeoJSON слой для сохранения кликабельных попапов
   const geoJsonData = useMemo(() => {
     if (!analysis || !analysis.grid || analysis.grid.length === 0) return null;
 
@@ -87,18 +61,21 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      const halfStep = step / 2;
+      // Трюк 1: Делаем квадраты шире на 1%, чтобы они слипались без швов
+      const halfStep = (step / 2) * 1.01;
+
+      const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
+      const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
 
       let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
       if (tempC > 100) {
         tempC = tempC - 273.15;
       }
 
-      const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
-
       return {
         type: "Feature",
         properties: {
+          color: getDynamicCommercialColor(normalizedRisk),
           risk: riskPercent,
           ndvi: cell.ndvi ?? cell.raw_ndvi ?? 0,
           wind: cell.wind ?? cell.raw_wind ?? 0,
@@ -144,9 +121,6 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
 
-        {/* Плавный Canvas Heatmap Слой */}
-        {analysis?.grid && <TrueHeatmapLayer grid={analysis.grid} />}
-
         <FeatureGroup>
           <EditControl
             position="topleft"
@@ -174,15 +148,18 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           />
         </FeatureGroup>
 
-        {/* Прозрачный интерфейсный слой для кликов и попапов */}
         {geoJsonData && (
           <GeoJSON
             key={layerKey}
             data={geoJsonData}
-            style={() => ({
-              fillOpacity: 0,
-              stroke: false,
-              weight: 0,
+            renderer={svgRenderer}
+            style={(feature) => ({
+              fillColor: feature.properties.color,
+              fillOpacity: 0.85, // Оптимальная прозрачность
+              stroke: true,
+              // Трюк 2: Обводка цветом заливки убирает визуальную сетку
+              color: feature.properties.color, 
+              weight: 1, 
             })}
             onEachFeature={(feature, layer) => {
               layer.bindPopup(`
