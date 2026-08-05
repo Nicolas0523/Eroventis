@@ -6,6 +6,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
+// Плавная и красивая палитра (Green -> Yellow -> Orange -> Deep Red/Neon)
 const getDynamicCommercialColor = (value) => {
   const t = Math.max(0, Math.min(1, value));
   let r, g, b;
@@ -17,19 +18,19 @@ const getDynamicCommercialColor = (value) => {
     b = Math.round(129 + (50 - 129) * localT);
   } else if (t < 0.5) {
     const localT = (t - 0.25) / 0.25;
-    r = Math.round(90 + (220 - 90) * localT);
-    g = Math.round(210 + (195 - 210) * localT);
-    b = Math.round(50 + (15 - 50) * localT);
+    r = Math.round(90 + (245 - 90) * localT);
+    g = Math.round(210 + (210 - 210) * localT);
+    b = Math.round(50 + (30 - 50) * localT);
   } else if (t < 0.75) {
     const localT = (t - 0.5) / 0.25;
-    r = Math.round(220 + (245 - 220) * localT);
-    g = Math.round(195 + (120 - 195) * localT);
-    b = Math.round(15 + (20 - 15) * localT);
+    r = Math.round(245 + (249 - 245) * localT);
+    g = Math.round(210 + (115 - 210) * localT);
+    b = Math.round(30 + (22 - 30) * localT);
   } else {
     const localT = (t - 0.75) / 0.25;
-    r = Math.round(245 + (239 - 245) * localT);
-    g = Math.round(120 + (68 - 120) * localT);
-    b = Math.round(20 + (68 - 20) * localT);
+    r = Math.round(249 + (220 - 249) * localT);
+    g = Math.round(115 + (38 - 115) * localT);
+    b = Math.round(22 + (38 - 22) * localT);
   }
 
   return `rgb(${r}, ${g}, ${b})`;
@@ -45,9 +46,10 @@ function HeatmapPane() {
       pane = map.createPane("heatmapPane");
       pane.style.zIndex = "400";
     }
-    pane.style.opacity = "0.88";
-    pane.style.filter = "blur(12px)";
-    pane.style.webkitFilter = "blur(12px)";
+    // Эффект легкого свечения и кинематографичности
+    pane.style.opacity = "0.92";
+    pane.style.filter = "blur(8px)";
+    pane.style.webkitFilter = "blur(8px)";
     pane.style.pointerEvents = "auto";
   }, [map]);
   return null;
@@ -76,12 +78,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      const halfStep = step / 2 + 0.001;
+      // Делаем ячейки чуть шире (на 5%), чтобы они сливались в сплошную тепловую карту без зазоров
+      const halfStep = (step / 2) * 1.05;
 
-      // Получаем процент риска напрямую с бэкенда (уже сглаженного через gaussian_filter на Python)
       const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk !== undefined ? cell.risk : 0);
-      
-      // Нормализуем значение в диапазон [0, 1] для цветовой шкалы
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
 
       let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
@@ -122,9 +122,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
     };
   }, [analysis]);
 
+  // Генерируем уникальный ключ, который гарантированно заставит React обновить слой при новом анализе
   const layerKey = useMemo(() => {
-    if (!analysis) return "empty_layer";
-    return `${analysis.type || "type"}_${analysis.risk_score || 0}_${analysis.start_date || ""}_${analysis.grid?.length || 0}`;
+    if (!analysis || !analysis.grid) return "empty_layer";
+    return `grid_layer_${analysis.grid.length}_${Date.now()}`;
   }, [analysis]);
 
   return (
@@ -133,8 +134,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         ref={mapRef}
         center={[48.0196, 66.9237]}
         zoom={5}
-        style={{ height: "100%", width: "100%", background: "#0b0f19" }}
-        zoomControl={true}
+        style={{ height: "100%", width: "100%", background: "#060810" }}
+        zoomControl={false} // Перенесем или оставим чистым
       >
         <TileLayer
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -162,8 +163,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                 },
                 shapeOptions: {
                   color: "#3b82f6",
-                  weight: 3,
-                  fillOpacity: 0.1,
+                  weight: 2,
+                  fillOpacity: 0.15,
                 },
               },
             }}
@@ -178,24 +179,48 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.85,
-              stroke: false,
-              weight: 0,
-              color: "transparent",
+              fillOpacity: 0.82, // Полупрозрачность для красивого смешивания цветов
+              stroke: true,
+              weight: 0.5,
+              color: feature.properties.color, // Обводка в тон цвета ячейки убирает грубые сетчатые швы
             })}
             onEachFeature={(feature, layer) => {
+              // Премиальный дизайн попапа в стиле SaaS / Dark Theme
               layer.bindPopup(`
-                <div style="font-family: system-ui, sans-serif; font-size: 12px; line-height: 1.5; color: #1e293b;">
-                  <strong style="font-size: 13px; color: #0f172a;">Wind Erosion Details</strong><br/>
-                  <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;"/>
-                  <b>Erosion Risk:</b> <span style="color: ${feature.properties.risk > 70 ? '#ef4444' : feature.properties.risk > 30 ? '#f59e0b' : '#10b981'}; font-weight: bold;">${parseFloat(feature.properties.risk || 0).toFixed(1)}%</span><br/>
-                  <b>NDVI:</b> ${parseFloat(feature.properties.ndvi || 0).toFixed(3)}<br/>
-                  <b>Max Wind:</b> ${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s<br/>
-                  <b>Temperature:</b> ${parseFloat(feature.properties.temp || 0).toFixed(1)} °C<br/>
-                  <b>Soil Moisture:</b> ${parseFloat(feature.properties.soil_moisture || 0).toFixed(3)}<br/>
-                  <b>Soil Type ID:</b> ${feature.properties.soil_type || 'N/A'}
+                <div style="font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.6; color: #f8fafc; background: #0f172a; padding: 4px; border-radius: 8px; min-width: 180px;">
+                  <div style="font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 4px;">
+                    🌍 Wind Erosion Details
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: #94a3b8;">Risk:</span> 
+                    <span style="color: ${feature.properties.risk > 70 ? '#ef4444' : feature.properties.risk > 30 ? '#f59e0b' : '#10b981'}; font-weight: bold;">
+                      ${parseFloat(feature.properties.risk || 0).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: #94a3b8;">NDVI:</span> 
+                    <span>${parseFloat(feature.properties.ndvi || 0).toFixed(3)}</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: #94a3b8;">Max Wind:</span> 
+                    <span>${parseFloat(feature.properties.wind || 0).toFixed(1)} m/s</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: #94a3b8;">Temperature:</span> 
+                    <span>${parseFloat(feature.properties.temp || 0).toFixed(1)} °C</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: #94a3b8;">Soil Moisture:</span> 
+                    <span>${parseFloat(feature.properties.soil_moisture || 0).toFixed(3)}</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #94a3b8;">Soil Type:</span> 
+                    <span>${feature.properties.soil_type || 'N/A'}</span>
+                  </div>
                 </div>
-              `);
+              `, {
+                className: 'custom-dark-popup'
+              });
             }}
           />
         )}
