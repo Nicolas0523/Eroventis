@@ -50,12 +50,12 @@ def calculate_hotspots(grid_cells, risk_threshold=None, min_size=2):
     if not grid_cells:
         return []
         
-    all_risks = [c.get("risk", 0) for c in grid_cells]
+    all_risks = [c.get("risk_percent", 0) for c in grid_cells]
     
     if risk_threshold is None:
         risk_threshold = np.percentile(all_risks, 65) if all_risks else 0
         
-    high_risk = [c for c in grid_cells if c.get("risk", 0) >= risk_threshold]
+    high_risk = [c for c in grid_cells if c.get("risk_percent", 0) >= risk_threshold]
     high_risk_dict = {(c["i"], c["j"]): c for c in high_risk if "i" in c and "j" in c}
     
     visited = set()
@@ -85,7 +85,7 @@ def calculate_hotspots(grid_cells, risk_threshold=None, min_size=2):
         if len(group) >= min_size:
             avg_lat = sum(c["lat"] for c in group) / len(group)
             avg_lon = sum(c["lon"] for c in group) / len(group)
-            max_risk_in_group = max(c["risk"] for c in group)
+            max_risk_in_group = max(c["risk_percent"] for c in group)
             
             commercial_percentage = round(max_risk_in_group, 1)
             
