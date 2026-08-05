@@ -102,6 +102,7 @@ def smooth_grid_risks(grid_results, sigma=1.0):
 
     return grid_results
 
+
 def prediction_val(polygon, start_date, end_date):
     raw_data = load_raw_data_multi_year(polygon, start_date, end_date)
     month = datetime.strptime(start_date, "%Y-%m-%d").month

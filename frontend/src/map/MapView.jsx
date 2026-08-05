@@ -61,7 +61,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      // Трюк: Делаем квадраты шире на 2%, чтобы они наложились друг на друга без швов
+      // Делаем квадраты шире на 2%, чтобы они наложились без швов
       const halfStep = (step / 2) * 1.02;
 
       const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
@@ -109,6 +109,23 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      {/* Внедряем стили Leaflet напрямую, чтобы убрать белые рамки попапов */}
+      <style>{`
+        .leaflet-popup-content-wrapper {
+          background: transparent !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
+        .leaflet-popup-content {
+          margin: 0 !important;
+          line-height: normal !important;
+        }
+        .leaflet-popup-tip {
+          background: #0f172a !important;
+          box-shadow: none !important;
+        }
+      `}</style>
+
       <MapContainer
         ref={mapRef}
         center={[48.0196, 66.9237]}
@@ -157,11 +174,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
               fillColor: feature.properties.color,
               fillOpacity: 0.85, 
               stroke: true,
-              color: feature.properties.color, // Обводка цветом ячейки маскирует сетку
+              color: feature.properties.color, // Скрываем сетку за счет совпадения цвета обводки и заливки
               weight: 1, 
             })}
             onEachFeature={(feature, layer) => {
-              // Бонус: округляем Soil Type и другие параметры для чистоты интерфейса
               const formatNumber = (val, decimals = 1) => 
                 typeof val === 'number' ? val.toFixed(decimals) : (val || '0');
 
