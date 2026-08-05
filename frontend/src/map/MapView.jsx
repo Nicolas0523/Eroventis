@@ -61,8 +61,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      // Делаем квадраты шире на 2%, чтобы они наложились без швов
-      const halfStep = (step / 2) * 1.02;
+      // Увеличиваем шаг чуть сильнее (1.04), чтобы ячейки перекрывали друг друга и не было швов
+      const halfStep = (step / 2) * 1.04;
 
       const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
@@ -109,20 +109,26 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      {/* Внедряем стили Leaflet напрямую, чтобы убрать белые рамки попапов */}
+      {/* Полностью убираем белые рамки, тени и крестик у попапов Leaflet */}
       <style>{`
-        .leaflet-popup-content-wrapper {
-          background: transparent !important;
+        .leaflet-popup-content-wrapper, 
+        .leaflet-popup-tip {
+          background: #0f172a !important;
+          color: #f8fafc !important;
           box-shadow: none !important;
+          border: none !important;
+        }
+        .leaflet-popup-content-wrapper {
           padding: 0 !important;
+          border-radius: 8px !important;
+          overflow: hidden !important;
         }
         .leaflet-popup-content {
           margin: 0 !important;
           line-height: normal !important;
         }
-        .leaflet-popup-tip {
-          background: #0f172a !important;
-          box-shadow: none !important;
+        .leaflet-container a.leaflet-popup-close-button {
+          display: none !important;
         }
       `}</style>
 
@@ -172,9 +178,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={svgRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.85, 
-              stroke: false,
-              weight: 0, 
+              fillOpacity: 0.9, 
+              stroke: true,
+              color: feature.properties.color, // Обводка в точности цвета заливки убирает видимые швы
+              weight: 1.5, 
             })}
             onEachFeature={(feature, layer) => {
               const formatNumber = (val, decimals = 1) => 
