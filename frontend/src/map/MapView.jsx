@@ -78,9 +78,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       const step = cell.step_deg || 0.09;
       const halfStep = step / 2 + 0.001;
 
-      // Берём риск, сгенерированный бэкендом (он уже сглажен и переведен в шкалу 0-100)
-      const rawRiskVal = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk !== undefined ? cell.risk : 0);
-      const riskPercent = rawRiskVal <= 1.0 ? rawRiskVal * 100 : rawRiskVal;
+      // Получаем процент риска напрямую с бэкенда (уже сглаженного через gaussian_filter на Python)
+      const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk !== undefined ? cell.risk : 0);
+      
+      // Нормализуем значение в диапазон [0, 1] для цветовой шкалы
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
 
       let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
@@ -92,7 +93,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         type: "Feature",
         properties: {
           color: getDynamicCommercialColor(normalizedRisk),
-          risk: riskPercent, // Исправлено: теперь ключ называется risk для попапа
+          risk: riskPercent,
           ndvi: cell.ndvi ?? cell.raw_ndvi ?? 0,
           wind: cell.wind ?? cell.raw_wind ?? 0,
           temp: tempC,
@@ -177,7 +178,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             pane="heatmapPane"
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.85, // Сделано видимым (было 1.0, но блурить прозрачное бессмысленно)
+              fillOpacity: 0.85,
               stroke: false,
               weight: 0,
               color: "transparent",
