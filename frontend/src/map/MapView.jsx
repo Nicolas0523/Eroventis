@@ -2,56 +2,51 @@ import React, { useMemo, useEffect } from "react";
 import { MapContainer, TileLayer, GeoJSON, FeatureGroup, useMap } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
 import L from "leaflet";
+import "leaflet.heat"; // Подключаем библиотеку тепловой карты
 
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
 
-// Плавная и красивая палитра (Green -> Yellow -> Orange -> Deep Red/Neon)
-const getDynamicCommercialColor = (value) => {
-  const t = Math.max(0, Math.min(1, value));
-  let r, g, b;
-
-  if (t < 0.25) {
-    const localT = t / 0.25;
-    r = Math.round(16 + (90 - 16) * localT);
-    g = Math.round(185 + (210 - 185) * localT);
-    b = Math.round(129 + (50 - 129) * localT);
-  } else if (t < 0.5) {
-    const localT = (t - 0.25) / 0.25;
-    r = Math.round(90 + (245 - 90) * localT);
-    g = Math.round(210 + (210 - 210) * localT);
-    b = Math.round(50 + (30 - 50) * localT);
-  } else if (t < 0.75) {
-    const localT = (t - 0.5) / 0.25;
-    r = Math.round(245 + (249 - 245) * localT);
-    g = Math.round(210 + (115 - 210) * localT);
-    b = Math.round(30 + (22 - 30) * localT);
-  } else {
-    const localT = (t - 0.75) / 0.25;
-    r = Math.round(249 + (220 - 249) * localT);
-    g = Math.round(115 + (38 - 115) * localT);
-    b = Math.round(22 + (38 - 22) * localT);
-  }
-
-  return `rgb(${r}, ${g}, ${b})`;
-};
-
-const svgRenderer = L.svg();
-
-function HeatmapPane() {
+// --- НОВЫЙ КОМПОНЕНТ ПЛАВНОЙ ТЕПЛОВОЙ КАРТЫ ---
+function TrueHeatmapLayer({ grid }) {
   const map = useMap();
+
   useEffect(() => {
-    let pane = map.getPane("heatmapPane");
-    if (!pane) {
-      pane = map.createPane("heatmapPane");
-      pane.style.zIndex = "400";
-    }
-    // Эффект легкого свечения и кинематографичности
-    pane.style.opacity = "0.95";
-    pane.style.filter = "blur(18px)";
-    pane.style.webkitFilter = "blur(18px)";
-    pane.style.pointerEvents = "auto";
-  }, [map]);
+    if (!grid || grid.length === 0) return;
+
+    // 1. Собираем точки для тепловой карты: [широта, долгота, интенсивность]
+    const heatPoints = grid
+      .filter((cell) => cell.lat !== undefined && cell.lon !== undefined)
+      .map((cell) => {
+        const risk = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
+        // Нормализуем риск от 0.0 до 1.0
+        const intensity = Math.max(0, Math.min(1, risk / 100));
+        return [cell.lat, cell.lon, intensity];
+      });
+
+    // 2. Создаем слой тепловой карты с красивым градиентом
+    const heatLayer = L.heatLayer(heatPoints, {
+      radius: 35, // Размер пятна от одной ячейки (можно менять)
+      blur: 40,   // Сила размытия (создает тот самый плавный переход)
+      maxZoom: 10,
+      max: 1.0,   // Максимальное значение интенсивности
+      gradient: {
+        0.15: '#10b981', // Зеленый (низкий риск)
+        0.40: '#84cc16', // Салатовый
+        0.60: '#eab308', // Желтый (повышенный)
+        0.80: '#f97316', // Оранжевый (высокий)
+        1.00: '#ef4444'  // Красный (критический)
+      }
+    });
+
+    heatLayer.addTo(map);
+
+    // Очистка при размонтировании или обновлении данных
+    return () => {
+      map.removeLayer(heatLayer);
+    };
+  }, [map, grid]);
+
   return null;
 }
 
@@ -78,21 +73,18 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      // Делаем ячейки чуть шире (на 5%), чтобы они сливались в сплошную тепловую карту без зазоров
-      const halfStep = (step / 2) * 1.05;
-
-      const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk !== undefined ? cell.risk : 0);
-      const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
+      const halfStep = step / 2;
 
       let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
       if (tempC > 100) {
         tempC = tempC - 273.15;
       }
 
+      const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
+
       return {
         type: "Feature",
         properties: {
-          color: getDynamicCommercialColor(normalizedRisk),
           risk: riskPercent,
           ndvi: cell.ndvi ?? cell.raw_ndvi ?? 0,
           wind: cell.wind ?? cell.raw_wind ?? 0,
@@ -116,13 +108,9 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       };
     });
 
-    return {
-      type: "FeatureCollection",
-      features,
-    };
+    return { type: "FeatureCollection", features };
   }, [analysis]);
 
-  // Генерируем уникальный ключ, который гарантированно заставит React обновить слой при новом анализе
   const layerKey = useMemo(() => {
     if (!analysis || !analysis.grid) return "empty_layer";
     return `grid_layer_${analysis.grid.length}_${Date.now()}`;
@@ -135,14 +123,15 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         center={[48.0196, 66.9237]}
         zoom={5}
         style={{ height: "100%", width: "100%", background: "#060810" }}
-        zoomControl={false} // Перенесем или оставим чистым
+        zoomControl={false}
       >
         <TileLayer
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
 
-        <HeatmapPane />
+        {/* Добавляем наш новый плавный тепловой слой */}
+        {analysis?.grid && <TrueHeatmapLayer grid={analysis.grid} />}
 
         <FeatureGroup>
           <EditControl
@@ -171,20 +160,17 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           />
         </FeatureGroup>
 
+        {/* Невидимая сетка GeoJSON для сохранения работы Попапов при клике! */}
         {geoJsonData && (
           <GeoJSON
             key={layerKey}
             data={geoJsonData}
-            renderer={svgRenderer}
-            pane="heatmapPane"
-            style={(feature) => ({
-              fillColor: feature.properties.color,
-              fillOpacity: 1.0, // Полупрозрачность для красивого смешивания цветов
-              stroke: false,
+            style={() => ({
+              fillOpacity: 0, // Делаем квадраты невидимыми
+              stroke: false,  // Убираем границы
               weight: 0,
             })}
             onEachFeature={(feature, layer) => {
-              // Премиальный дизайн попапа в стиле SaaS / Dark Theme
               layer.bindPopup(`
                 <div style="font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.6; color: #f8fafc; background: #0f172a; padding: 4px; border-radius: 8px; min-width: 180px;">
                   <div style="font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 4px;">
@@ -217,9 +203,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
                     <span>${feature.properties.soil_type || 'N/A'}</span>
                   </div>
                 </div>
-              `, {
-                className: 'custom-dark-popup'
-              });
+              `);
             }}
           />
         )}
