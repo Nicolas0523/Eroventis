@@ -178,8 +178,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             style={(feature) => ({
               fillColor: feature.properties.color,
               fillOpacity: 0.9, 
-              stroke: false,
-              weight: 0, 
+              stroke: true, 
+              color: feature.properties.color, 
+              opacity: 0.9, 
+              weight: 0.5, 
             })}
             onEachFeature={(feature, layer) => {
               const formatNumber = (val, decimals = 1) => 
