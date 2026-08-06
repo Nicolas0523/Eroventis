@@ -22,10 +22,12 @@ AAI_REFERENCE = 1.7583
 
 def _scale_aai_to_percent(preds):
     preds = np.asarray(preds, dtype=float)
-
+    print("DEBUG preds before shift:", preds) # Посмотри, что выдает модель
+    
     if bias_shift is not None:
         preds += bias_shift
-
+        print("DEBUG preds after shift:", preds)
+        
     preds = np.maximum(preds, 0)
 
     risk_percent = 100.0 * preds / AAI_REFERENCE
