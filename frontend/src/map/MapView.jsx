@@ -61,8 +61,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      // Увеличиваем шаг чуть сильнее (1.04), чтобы ячейки перекрывали друг друга и не было швов
-      const halfStep = (step / 2) * 1.04;
+      const halfStep = (step / 2);
 
       const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
@@ -179,9 +178,8 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             style={(feature) => ({
               fillColor: feature.properties.color,
               fillOpacity: 0.9, 
-              stroke: true,
-              color: feature.properties.color, // Обводка в точности цвета заливки убирает видимые швы
-              weight: 1.5, 
+              stroke: false,
+              weight: 0, 
             })}
             onEachFeature={(feature, layer) => {
               const formatNumber = (val, decimals = 1) => 
