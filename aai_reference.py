@@ -5,4 +5,4 @@ train_df = pd.read_csv(r"C:\Users\User\Desktop\проекты\windguard_2.0\Wind
 AAI_REFERENCE = train_df["erosion_risk"].quantile(0.999)
 
 
-print(f"Есептелген ғылыми AAI_REFERENCE: {AAI_REFERENCE:.2f}")
+print(f"AAI_REFERENCE: {AAI_REFERENCE:.2f}")

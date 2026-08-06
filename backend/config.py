@@ -21,6 +21,13 @@ ml_model = joblib.load(MODEL_PATH)
 features = joblib.load(FEATURES_PATH)
 bias_shift    = joblib.load(BIAS_SHIFT_PATH)
 
+# Reference value of the erosion index (AAI).
+# Computed as the 99.9th percentile of the training target.
+# Used only for visualization by mapping model outputs
+# to a relative 0–100 erosion intensity scale.
+# This value does not represent probability.
+AAI_REFERENCE = 1.7583
+
 # GEE инициализация
 GEE_INITIALIZED = False
 

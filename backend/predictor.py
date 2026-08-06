@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from scipy.ndimage import gaussian_filter
 
-from config import ml_model, bias_shift
+from config import ml_model, bias_shift, AAI_REFERENCE
 from data_loader import load_raw_data, load_raw_data_multi_year
 from extract_features import (
     extract_features, 
@@ -12,28 +12,21 @@ from extract_features import (
     FEATURE_COLUMNS
 )
 
-# Reference AAI value computed as the 99.9th percentile
-# of the training target (2018–2023).
-# Used only for linear scaling of model output.
-# The resulting value is a relative erosion index (0–100),
-# not a probability.
-AAI_REFERENCE = 1.7583
-
 
 def _scale_aai_to_percent(preds):
     preds = np.asarray(preds, dtype=float)
-    print("DEBUG preds before shift:", preds) # Посмотри, что выдает модель
-    
+
+    if AAI_REFERENCE <= 0:
+        raise ValueError("AAI_REFERENCE must be positive")
+
     if bias_shift is not None:
         preds += bias_shift
-        print("DEBUG preds after shift:", preds)
-        
+
     preds = np.maximum(preds, 0)
 
-    risk_percent = 100.0 * preds / AAI_REFERENCE
+    risk_index = preds / AAI_REFERENCE * 100.0
 
-    return np.clip(risk_percent, 0.0, 100.0).flatten()
-
+    return np.clip(risk_index, 0.0, 100.0).flatten()
 
 def smooth_grid_risks(grid_results, sigma=1.0):
     if not grid_results or not isinstance(grid_results, list) or len(grid_results) == 0:
