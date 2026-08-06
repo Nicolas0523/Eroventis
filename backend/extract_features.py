@@ -251,7 +251,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     reduced_fc = stacked.reduceRegions(
         collection=fc,
         reducer=ee.Reducer.mean(),
-        scale=5000  
+        scale=10000  
     )
 
     all_features_data = reduced_fc.getInfo().get("features", [])
