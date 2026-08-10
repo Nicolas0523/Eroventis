@@ -83,12 +83,11 @@ print(f"MAE: {mean_absolute_error(y_test, preds):.4f}")
 print(f"MSE: {mean_squared_error(y_test, preds):.4f}")
 print(f"Честный R²: {r2_score(y_test, preds):.4f}")
 
-# test — твой исходный DataFrame (до X_test = test[features]),
-# у него уже есть latitude/longitude как обычные колонки
+
 test_with_preds = test.copy()
 test_with_preds["prediction"] = preds
-test_with_preds["residual"] = y_test - preds          # знаковая ошибка (систематический bias по региону)
-test_with_preds["abs_error"] = np.abs(y_test - preds)  # абсолютная ошибка (просто "где модель хуже")
+test_with_preds["residual"] = y_test - preds         
+test_with_preds["abs_error"] = np.abs(y_test - preds)  
 
 # ---------- График 1: абсолютная ошибка по координатам ----------
 plt.figure(figsize=(10, 8))
@@ -128,15 +127,13 @@ plt.tight_layout()
 plt.savefig(r"C:\Users\User\Desktop\проекты\windguard_2.0\residual_map_signed_bias_v5.png", dpi=150)
 plt.show()
  
-# ---------- Быстрая количественная проверка на пространственную кластеризацию ----------
-# Грубая эвристика: бьём регион на грубую сетку (0.5 градуса) и смотрим,
-# не концентрируется ли ошибка в конкретных клетках сильнее, чем в среднем.
+
 test_with_preds["lat_bin"] = (test_with_preds["latitude"] // 0.5) * 0.5
 test_with_preds["lon_bin"] = (test_with_preds["longitude"] // 0.5) * 0.5
  
 grid_error_stats = test_with_preds.groupby(["lat_bin", "lon_bin"])["abs_error"].agg(["mean", "count"])
-grid_error_stats = grid_error_stats[grid_error_stats["count"] >= 5]  # игнорируем клетки с малой выборкой
- 
+grid_error_stats = grid_error_stats[grid_error_stats["count"] >= 5] 
+
 overall_mean_error = test_with_preds["abs_error"].mean()
 worst_cells = grid_error_stats.sort_values("mean", ascending=False).head(10)
  

@@ -250,18 +250,10 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     reduced_fc = stacked.reduceRegions(
         collection=fc,
         reducer=ee.Reducer.mean(),
-        scale=10000  
+        scale=5000  
     )
 
     all_features_data = reduced_fc.getInfo().get("features", [])
-
-    if all_features_data:
-        sample_props = all_features_data[0].get("properties", {})
-        print("=== RAW FUTURE VALUES (before clip) ===")
-        print("wind_mean (future CMIP6):", sample_props.get("wind_mean"))
-        print("wind_max (scaled):        ", sample_props.get("wind_max"))
-        print("rain (future CMIP6):      ", sample_props.get("rain"))
-        print("tempC (future CMIP6):     ", sample_props.get("tempC"))
 
     rows = []
     grid_meta = []
@@ -318,5 +310,4 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
         return df, clipped_flags
 
     df, clipped_flags = clip_to_train_bounds(rows, FEATURE_COLUMNS, train_bounds)
-    print("Clipped cells per feature:", clipped_flags) 
     return scaler.transform(df), grid_meta
