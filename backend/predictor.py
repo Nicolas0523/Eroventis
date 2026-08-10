@@ -116,6 +116,7 @@ def prediction_val(polygon, start_date, end_date):
 def prediction_grid(polygon, start_date, end_date, resolution_km=10):
     raw_data = load_raw_data_multi_year(polygon, start_date, end_date)
     month = datetime.strptime(start_date, "%Y-%m-%d").month
+    used_fallback = raw_data.get("used_fallback", False)
 
     scaled, coords_meta = extract_features_grid(raw_data, polygon, month, resolution_km)
 
@@ -141,7 +142,8 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
             "soil_moisture": meta_entry.get("soil_moisture", 0.2),
             "soil_type": meta_entry.get("soil_type", 2.0),
             "slope": meta_entry.get("slope", 1.0),
-            "step_deg": meta_entry.get("step_deg", 0.09)
+            "step_deg": meta_entry.get("step_deg", 0.09),
+            "used_fallback": used_fallback
         })
 
     grid_results = smooth_grid_risks(grid_results, sigma=1.0)
@@ -151,6 +153,7 @@ def prediction_grid(polygon, start_date, end_date, resolution_km=10):
 def prediction_future_grid(polygon, month, resolution_km=10):
     target_month = month if month in [5, 6, 7, 8, 9] else 7
     raw_data = load_raw_data_multi_year(polygon, "2025-06-01", "2025-08-31") 
+    used_fallback = raw_data.get("used_fallback", False)
 
     scaled, coords_meta = extract_future_features_grid(
         raw_data, polygon, target_month, resolution_km=resolution_km
@@ -178,7 +181,8 @@ def prediction_future_grid(polygon, month, resolution_km=10):
             "soil_moisture": meta_entry.get("soil_moisture", 0.2),
             "soil_type": meta_entry.get("soil_type", 2.0),
             "slope": meta_entry.get("slope", 1.0),
-            "step_deg": meta_entry.get("step_deg", 0.09)
+            "step_deg": meta_entry.get("step_deg", 0.09),
+            "used_fallback": used_fallback
         })
 
     grid_results = smooth_grid_risks(grid_results, sigma=1.0)

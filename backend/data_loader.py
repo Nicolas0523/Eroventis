@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 
 def load_raw_data(polygon, start_date, end_date):
 
+    fallback_flags = {"ndvi": False, "era5": False}
+
     def get_ndvi(start, end):
         collection = ee.ImageCollection("MODIS/061/MOD13A2") \
             .filterBounds(polygon) \
             .filterDate(start, end)
-        
+
         size = collection.size().getInfo()
-        
+
         if size == 0:
             start_dt = datetime.strptime(start, "%Y-%m-%d")
             end_dt   = datetime.strptime(end,   "%Y-%m-%d")
@@ -20,7 +22,8 @@ def load_raw_data(polygon, start_date, end_date):
             collection = ee.ImageCollection("MODIS/061/MOD13A2") \
                 .filterBounds(polygon) \
                 .filterDate(start, end)
-        
+            fallback_flags["ndvi"] = True  
+
         return collection \
             .mean() \
             .select("NDVI") \
@@ -34,9 +37,9 @@ def load_raw_data(polygon, start_date, end_date):
         collection = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY") \
             .filterBounds(polygon) \
             .filterDate(start, end)
-        
+
         size = collection.size().getInfo()
-        
+
         if size == 0:
             start_dt = datetime.strptime(start, "%Y-%m-%d")
             end_dt   = datetime.strptime(end,   "%Y-%m-%d")
@@ -46,7 +49,8 @@ def load_raw_data(polygon, start_date, end_date):
             collection = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY") \
                 .filterBounds(polygon) \
                 .filterDate(start, end)
-        
+            fallback_flags["era5"] = True 
+
         return collection
 
     era5_hourly = get_era5(start_date, end_date)
@@ -97,26 +101,26 @@ def load_raw_data(polygon, start_date, end_date):
         "slope":         slope,
         "soil_type":     soil_type,
         "biome":         biome,
+        "used_fallback": fallback_flags["ndvi"] or fallback_flags["era5"], 
     }
 
 
 def load_raw_data_multi_year(polygon, start_date, end_date):
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt   = datetime.strptime(end_date,   "%Y-%m-%d")
-    
+
     if (end_dt - start_dt).days <= 365:
         return load_raw_data(polygon, start_date, end_date)
-    
-    yearly_results = []
-    
-    for year in range(start_dt.year, end_dt.year + 1):
 
+    yearly_results = []
+
+    for year in range(start_dt.year, end_dt.year + 1):
         start = f"{year}-01-01"
         end   = f"{year}-12-31"
-        
+
         yearly_raw_data = load_raw_data(polygon, start, end)
         yearly_results.append(yearly_raw_data)
-    
+
     #avg data
     ndvi_collection = ee.ImageCollection([r["ndvi"] for r in yearly_results])
     avg_ndvi = ndvi_collection.mean()
@@ -139,6 +143,8 @@ def load_raw_data_multi_year(polygon, start_date, end_date):
     evaporation_collection = ee.ImageCollection([r["evaporation"] for r in yearly_results])
     avg_evaporation = evaporation_collection.mean()
 
+    any_fallback = any(r.get("used_fallback", False) for r in yearly_results)
+
     return {
         "ndvi":          avg_ndvi,
         "wind_mean":     avg_wind_mean,
@@ -147,7 +153,8 @@ def load_raw_data_multi_year(polygon, start_date, end_date):
         "tempC":         avg_tempC,
         "soil_moisture": avg_soil_moisture,
         "evaporation":   avg_evaporation,
-        "slope":         yearly_results[0]["slope"],      
-        "soil_type":     yearly_results[0]["soil_type"], 
-        "biome":         yearly_results[0]["biome"],      
+        "slope":         yearly_results[0]["slope"],
+        "soil_type":     yearly_results[0]["soil_type"],
+        "biome":         yearly_results[0]["biome"],
+        "used_fallback": any_fallback,
     }

@@ -22,7 +22,6 @@ from predictor import prediction_grid, prediction_future_grid, get_feature_impor
 from grid import calculate_hotspots 
 from gee_service import resolve_dates
 
-# Инициализация Earth Engine
 try:
     service_account = os.getenv("GEE_SERVICE_ACCOUNT")
     private_key     = os.getenv("GEE_PRIVATE_KEY")
@@ -128,7 +127,7 @@ async def run_job(job_id: str, func, data):
             asyncio.create_task(cleanup_job(job_id))
 
 
-def _calculate_weighted_risk(grid_cells):
+def _calculate_weighted_risk(grid_cells, scenario_weight_p90=0.4):
     if not grid_cells:
         return 0.0
     risks = [p.get("risk", 0.0) for p in grid_cells if p.get("risk") is not None]
@@ -138,7 +137,7 @@ def _calculate_weighted_risk(grid_cells):
     mean_risk = sum(risks) / len(risks)
     top_90th_risk = float(np.percentile(risks, 90))
     
-    return float((mean_risk * 0.6) + (top_90th_risk * 0.4))
+    return float((mean_risk * (1 - scenario_weight_p90)) + (top_90th_risk * scenario_weight_p90))
 
 
 # =========================================================================
@@ -172,6 +171,8 @@ def _analyze_sync(data: AnalysisRequest):
     
     hotspots = calculate_hotspots(grid_cells, min_size=2)
 
+    overall_used_fallback = grid_cells[0].get("used_fallback", False) if grid_cells else False
+
     return {
         "polygon":     data.geometry.coordinates,
         "grid":        grid_cells,  
@@ -182,7 +183,8 @@ def _analyze_sync(data: AnalysisRequest):
             "risk_score": round(overall_risk, 4),
             "start_date": actual_start,
             "end_date":   actual_end,
-            "forecast":   is_forecast
+            "forecast":   is_forecast,
+            "used_fallback": overall_used_fallback,
         }
     }
 
@@ -206,8 +208,8 @@ def short_forecast_sync(data: AnalysisRequest):
     resolution = RESOLUTION
         
     today        = datetime.now()
-    actual_start = today.replace(year=today.year - 1).strftime("%Y-%m-%d")
-    actual_end   = (today.replace(year=today.year - 1) + timedelta(days=30)).strftime("%Y-%m-%d")
+    actual_end   = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    actual_start = (today - timedelta(days=37)).strftime("%Y-%m-%d") 
 
     forecast_from = today.strftime("%Y-%m-%d")
     forecast_to   = (today + timedelta(days=10)).strftime("%Y-%m-%d")
@@ -224,6 +226,8 @@ def short_forecast_sync(data: AnalysisRequest):
     
     hotspots = calculate_hotspots(grid_cells, min_size=2)
 
+    overall_used_fallback = grid_cells[0].get("used_fallback", False) if grid_cells else False
+
     return {
         "polygon":       data.geometry.coordinates,
         "grid":          grid_cells, 
@@ -239,7 +243,8 @@ def short_forecast_sync(data: AnalysisRequest):
             "start_date":    actual_start,
             "end_date":      actual_end,
             "forecast_from": forecast_from,
-            "forecast_to":   forecast_to
+            "forecast_to":   forecast_to,
+            "used_fallback": overall_used_fallback,
         }
     }
 
@@ -280,9 +285,6 @@ def _climate_forecast_sync(data: AnalysisRequest):
 
     if not grid_climate:
         return {"error": "Failed to generate climate forecast for this region."}
-
-
-
     
     for cell in grid_climate:
         if "raw_ndvi" in cell:
@@ -290,9 +292,11 @@ def _climate_forecast_sync(data: AnalysisRequest):
             cell["wind"] = cell["raw_wind"]
             cell["temp"] = cell["raw_temp"]
 
-    future_risk = _calculate_weighted_risk(grid_climate)
+    future_risk = _calculate_weighted_risk(grid_climate, scenario_weight_p90=0.7)
 
     hotspots = calculate_hotspots(grid_climate, min_size=2)
+
+    overall_used_fallback = grid_climate[0].get("used_fallback", False) if grid_climate else False
 
     result = {
         "polygon":     data.geometry.coordinates,
@@ -307,7 +311,8 @@ def _climate_forecast_sync(data: AnalysisRequest):
             "risk_score":     round(future_risk, 4),
             "scenario":       "SSP5-8.5 (worst case)",
             "period":         "2040-2050",
-            "hotspots_found": len(hotspots)
+            "hotspots_found": len(hotspots),
+            "used_fallback": overall_used_fallback,
         }
     }
         

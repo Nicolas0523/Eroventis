@@ -102,13 +102,26 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
   }, [analysis]);
 
   const layerKey = useMemo(() => {
-    if (!analysis || !analysis.grid) return "empty_layer";
-    return `grid_layer_${analysis.grid.length}_${Date.now()}`;
+      if (!analysis?.grid) return "empty_layer";
+      const riskSum = analysis.grid.reduce(
+        (sum, cell) => sum + (cell.risk_percent ?? cell.risk ?? 0),
+        0
+      );
+      return `grid_${analysis.grid.length}_${riskSum.toFixed(2)}`;
+  }, [analysis]);
+
+  // Флаг: использовались ли fallback-данные (прошлый год вместо актуальных)
+  // Берём либо из context (если бэкенд его туда положил), либо из первой ячейки грида
+  const usedFallback = useMemo(() => {
+    if (analysis?.context?.used_fallback) return true;
+    if (analysis?.grid && analysis.grid.length > 0) {
+      return Boolean(analysis.grid[0].used_fallback);
+    }
+    return false;
   }, [analysis]);
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      {/* Полностью убираем белые рамки, тени и крестик у попапов Leaflet */}
       <style>{`
         .leaflet-popup-content-wrapper, 
         .leaflet-popup-tip {
@@ -130,6 +143,30 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
           display: none !important;
         }
       `}</style>
+
+      {/* Баннер предупреждения о fallback-данных — поверх карты, сверху по центру */}
+      {usedFallback && (
+        <div
+          style={{
+            position: "absolute",
+            top: "12px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1000,
+            background: "rgba(245, 158, 11, 0.95)",
+            color: "#0f172a",
+            padding: "6px 14px",
+            borderRadius: "6px",
+            fontSize: "12px",
+            fontWeight: 600,
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            pointerEvents: "none",
+          }}
+        >
+          ⚠ Using fallback data (previous year) — recent satellite imagery unavailable for this period
+        </div>
+      )}
 
       <MapContainer
         ref={mapRef}
@@ -177,10 +214,11 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={svgRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.9, 
-              stroke: false, 
-              color: feature.properties.color, 
-              opacity: 0.9, 
+              fillOpacity: 0.8, 
+              stroke: true, 
+              color: '#00000000', 
+              opacity: 0.15,
+              weight: 0.2, 
             })}
             onEachFeature={(feature, layer) => {
               const formatNumber = (val, decimals = 1) => 

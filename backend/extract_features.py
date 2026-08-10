@@ -4,7 +4,7 @@ import joblib
 import pandas as pd
 from pathlib import Path
 
-from config import scaler
+from config import scaler, train_bounds
 from grid import create_grid
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -116,7 +116,6 @@ def extract_features_grid(raw_data, polygon, month, resolution_km=10):
     if not grid_cells:
         return [], []
 
-    # Предварительное размытие резких пространственных растров
     slope_smoothed = raw_data["slope"].focalMean(radius=10000, units='meters')
     moisture_smoothed = raw_data["soil_moisture"].focalMean(radius=10000, units='meters')
 
@@ -213,7 +212,7 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
             .mean()
 
     tempC_future = cmip.select('tas').subtract(273.15).rename("tempC")
-    rain_future  = cmip.select('pr').multiply(86400).rename("rain")
+    rain_future = cmip.select('pr').multiply(3.6).rename("rain")
     wind_future  = cmip.select('sfcWind').rename("wind_mean")
     
     wind_max_future = raw_data["wind_max"].multiply(
@@ -255,6 +254,14 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     )
 
     all_features_data = reduced_fc.getInfo().get("features", [])
+
+    if all_features_data:
+        sample_props = all_features_data[0].get("properties", {})
+        print("=== RAW FUTURE VALUES (before clip) ===")
+        print("wind_mean (future CMIP6):", sample_props.get("wind_mean"))
+        print("wind_max (scaled):        ", sample_props.get("wind_max"))
+        print("rain (future CMIP6):      ", sample_props.get("rain"))
+        print("tempC (future CMIP6):     ", sample_props.get("tempC"))
 
     rows = []
     grid_meta = []
@@ -300,5 +307,16 @@ def extract_future_features_grid(raw_data, polygon, month, resolution_km=10):
     if not rows:
         return [], []
 
-    df = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
+    def clip_to_train_bounds(rows, columns, bounds):
+        df = pd.DataFrame(rows, columns=columns)
+        clipped_flags = {}
+        for f, (lo, hi) in bounds.items():
+            if f in df.columns:
+                out_of_range = ((df[f] < lo) | (df[f] > hi)).sum()
+                clipped_flags[f] = int(out_of_range)
+                df[f] = df[f].clip(lower=lo, upper=hi)
+        return df, clipped_flags
+
+    df, clipped_flags = clip_to_train_bounds(rows, FEATURE_COLUMNS, train_bounds)
+    print("Clipped cells per feature:", clipped_flags) 
     return scaler.transform(df), grid_meta
