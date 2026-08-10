@@ -51,6 +51,10 @@ jobs_lock = asyncio.Lock()
 analysis_semaphore = asyncio.Semaphore(2)
 
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
