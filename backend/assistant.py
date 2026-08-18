@@ -8,25 +8,29 @@ from groq import Groq
 
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
-load_dotenv()
 
-MODEL = "llama-3.3-70b-versatile"
+
+MODEL = "llama-3.1-8b-instant" 
+
+
+api_key = os.getenv("GROQ_API_KEY")
+if api_key:
+    client = Groq(api_key=api_key)
+else:
+    client = None
+    print("[ERROR] GROQ_API_KEY is missing from environment variables!")
 
 
 def generate_individual_response(
     user_message: str,
     data: Optional[Dict[str, Any]] = None,
 ) -> str:
-    api_key = os.getenv("GROQ_API_KEY")
-
-    if not api_key:
-        print("[ERROR] GROQ_API_KEY is missing from environment variables!")
+    
+    if not client:
         return (
             "WindGuard AI is not configured.\n"
             "Please add GROQ_API_KEY to your environment variables or .env file."
         )
-
-    client = Groq(api_key=api_key)
 
     if data is None:
         system_prompt = """
@@ -46,7 +50,6 @@ Rules:
 """
 
     else:
-        # Учитываем, что risk_score уже может быть в процентах или [0, 1]
         raw_risk = data.get("risk_score", 0)
         risk = round(raw_risk * 100, 1) if raw_risk <= 1.0 else round(raw_risk, 1)
         
