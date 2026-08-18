@@ -2,7 +2,7 @@ import asyncio
 import time
 import httpx
 
-BASE_URL = "https://windguard-1.onrender.com"
+BASE_URL = "https://eroventis.onrender.com"
 
 client = httpx.AsyncClient(
     timeout=httpx.Timeout(240),

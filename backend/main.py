@@ -64,7 +64,7 @@ async def telegram_webhook(request: Request):
 
 @app.on_event("startup")
 async def set_bot_webhook():
-    render_url = "https://windguard-1.onrender.com"
+    render_url = "https://eroventis.onrender.com"
     await bot.set_webhook(url=f"{render_url}/telegram/webhook")
 
 async def cleanup_job(job_id):
