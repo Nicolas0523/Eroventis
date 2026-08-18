@@ -31,7 +31,7 @@ except Exception:
     ee.Authenticate()
     ee.Initialize()
 
-app = FastAPI(title="WindGuard API")
+app = FastAPI(title="Eroventis API")
 
 app.add_middleware(
     CORSMiddleware,
