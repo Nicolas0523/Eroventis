@@ -52,7 +52,7 @@ export default function ChatBot({ analysis, onNewResponse }) {
     >
       <div className="chat-header" style={{ marginBottom: "8px" }}>
         <span style={{ fontSize: "15px", fontWeight: "600", color: "#94a3b8", letterSpacing: "1px" }}>
-          WINDGUARD AI ASSISTANT
+          Elio
         </span>
       </div>
 

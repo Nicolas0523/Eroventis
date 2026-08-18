@@ -9,7 +9,7 @@ export default function Navbar() {
         
         <div className="brand-group">
           <span className="navbar-icon">🌪️</span>
-          <span className="brand-name">WindGuard</span>
+          <span className="brand-name">Eroventis</span>
           <span className="brand-badge">v2.0 Beta</span>
         </div>
       </div>

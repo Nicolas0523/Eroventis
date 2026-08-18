@@ -44,7 +44,7 @@ function drawHeader(pdf, pageWidth, title) {
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   pdf.setTextColor(148, 163, 184);
-  pdf.text("WINDGUARD · Wind Erosion Risk Assessment Platform", 10, 9.5);
+  pdf.text("EROVENTIS · Wind Erosion Risk Assessment Platform", 10, 9.5);
   pdf.text(title, pageWidth - 10, 9.5, { align: "right" });
 }
 
@@ -55,7 +55,7 @@ function drawFooter(pdf, pageWidth, pageHeight, pageNum) {
   pdf.setFontSize(7.5);
   pdf.setTextColor(100, 116, 139);
   pdf.text(
-    `Generated ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} · WindGuard v2.0 · Data: MODIS / ERA5-Land / Sentinel-5P`,
+    `Generated ${new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} · Eroventis v2.0 · Data: MODIS / ERA5-Land / Sentinel-5P`,
     10,
     pageHeight - 3.5
   );
@@ -96,7 +96,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
         rawHotspots = [...analysis.grid]
           .filter(cell => cell.risk !== undefined && !isNaN(cell.risk))
           .sort((a, b) => b.risk - a.risk)
-          .slice(0, 30) // Для приложения берем до 30 ячеек
+          .slice(0, 30) 
           .map(cell => ({
             lat: cell.lat,
             lon: cell.lon,
@@ -135,7 +135,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(48);
       pdf.setTextColor(255, 255, 255);
-      pdf.text("WINDGUARD", PW / 2, PH / 2 - 30, { align: "center" });
+      pdf.text("Eroventis", PW / 2, PH / 2 - 30, { align: "center" });
 
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(12);
@@ -183,7 +183,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       pdf.setTextColor(51, 65, 85);
 
       const summaryText = 
-        "WindGuard is an enterprise-grade Climate Tech analytics platform developed to monitor, evaluate, and forecast " +
+        "Eroventis is an enterprise-grade Climate Tech analytics platform developed to monitor, evaluate, and forecast " +
         "wind-driven land degradation across Central Asia. Moving away from localized, manually-calibrated empirical " +
         "formulas, the system deploys an optimized machine learning pipeline (XGBoost) integrated with Google Earth " +
         "Engine (GEE).\n\n" +
@@ -321,7 +321,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       sectionHeading(pdf, "5. AI Recommendations", recY);
 
       let cleanAI = aiResponse ? aiResponse.replace(/[*#`_~]/g, "").trim() : 
-        "Based on the spatial risk model, WindGuard recommends the following:\n\n" +
+        "Based on the spatial risk model, Eroventis recommends the following:\n\n" +
         "1. VEGETATION RESTORATION — Establish perennial cover crops in high-risk cells " +
         "where NDVI falls below the regional baseline.\n\n" +
         "2. NO-TILL FARMING — Avoid mechanical tillage during spring dry-season months " +
@@ -347,7 +347,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
       sectionHeading(pdf, "6. Methodology", 24);
 
       const methodText =
-        "The WindGuard platform deploys an optimized XGBoost gradient-boosting architecture trained on " +
+        "The Eroventis platform deploys an optimized XGBoost gradient-boosting architecture trained on " +
         "multi-year Earth Observation datasets. To overcome the lack of ground-level dust measurement stations " +
         "in Central Asia, the target function utilizes the Sentinel-5P TROPOMI Absorbing Aerosol Index (AAI), " +
         "enabling direct ML inference on real atmospheric aerosol loading events.\n\n" +
@@ -436,7 +436,7 @@ export default function ExportPDF({ analysis, aiResponse, mapRef }) {
 
       // Save PDF
       const date = new Date().toISOString().slice(0, 10);
-      pdf.save(`WindGuard_Executive_Report_${date}.pdf`);
+      pdf.save(`Eroventis_Executive_Report_${date}.pdf`);
     } catch (err) {
       console.error("PDF export failed:", err);
       alert("PDF export failed — check browser console.");
