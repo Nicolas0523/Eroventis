@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from scipy.ndimage import gaussian_filter
 
-from config import ml_model, bias_shift, AAI_REFERENCE
+from config import ml_model, AAI_REFERENCE
 from data_loader import load_raw_data, load_raw_data_multi_year
 from extract_features import (
     extract_features, 
@@ -18,9 +18,6 @@ def _scale_aai_to_percent(preds):
 
     if AAI_REFERENCE <= 0:
         raise ValueError("AAI_REFERENCE must be positive")
-
-    if bias_shift is not None:
-        preds += bias_shift
 
     preds = np.maximum(preds, 0)
 
