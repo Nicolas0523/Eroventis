@@ -61,9 +61,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
 
     const features = rawGrid.map((cell) => {
       const step = cell.step_deg || 0.09;
-      const halfStep = (step / 2);
+      const halfStep = step / 2;
 
-      const riskPercent = cell.risk_percent !== undefined ? cell.risk_percent : (cell.risk || 0);
+      const riskPercent =
+        cell.risk_percent !== undefined ? cell.risk_percent : cell.risk || 0;
       const normalizedRisk = Math.max(0, Math.min(1, riskPercent / 100));
 
       let tempC = parseFloat(cell.temp ?? cell.raw_temp ?? 0);
@@ -102,16 +103,15 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
   }, [analysis]);
 
   const layerKey = useMemo(() => {
-      if (!analysis?.grid) return "empty_layer";
-      const riskSum = analysis.grid.reduce(
-        (sum, cell) => sum + (cell.risk_percent ?? cell.risk ?? 0),
-        0
-      );
-      return `grid_${analysis.grid.length}_${riskSum.toFixed(2)}`;
+    if (!analysis?.grid) return "empty_layer";
+    const riskSum = analysis.grid.reduce(
+      (sum, cell) => sum + (cell.risk_percent ?? cell.risk ?? 0),
+      0
+    );
+    return `grid_${analysis.grid.length}_${riskSum.toFixed(2)}`;
   }, [analysis]);
 
   // Флаг: использовались ли fallback-данные (прошлый год вместо актуальных)
-  // Берём либо из context (если бэкенд его туда положил), либо из первой ячейки грида
   const usedFallback = useMemo(() => {
     if (analysis?.context?.used_fallback) return true;
     if (analysis?.grid && analysis.grid.length > 0) {
@@ -123,12 +123,18 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <style>{`
+        /* Гарантируем тёмный фон контейнера карты */
+        .leaflet-container {
+          background-color: #060810 !important;
+        }
+
+        /* Кастомный стиль для темных всплывающих окон (Popup) */
         .leaflet-popup-content-wrapper, 
         .leaflet-popup-tip {
           background: #0f172a !important;
           color: #f8fafc !important;
-          box-shadow: none !important;
-          border: none !important;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5) !important;
+          border: 1px solid #1e293b !important;
         }
         .leaflet-popup-content-wrapper {
           padding: 0 !important;
@@ -144,7 +150,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         }
       `}</style>
 
-      {/* Баннер предупреждения о fallback-данных — поверх карты, сверху по центру */}
+      {/* Баннер предупреждения о fallback-данных */}
       {usedFallback && (
         <div
           style={{
@@ -175,9 +181,12 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
         style={{ height: "100%", width: "100%", background: "#060810" }}
         zoomControl={false}
       >
+        {/* Рабочая рабочая тёмная подложка от CARTO Dark Matter без API ключей */}
         <TileLayer
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=cb1_3twd_1_507927c60b9eda9645dcdb95"
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={19}
         />
 
         <FeatureGroup>
@@ -214,24 +223,32 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
             renderer={svgRenderer}
             style={(feature) => ({
               fillColor: feature.properties.color,
-              fillOpacity: 0.8, 
-              stroke: true, 
-              color: '#00000000', 
+              fillOpacity: 0.8,
+              stroke: true,
+              color: "#00000000",
               opacity: 0.15,
-              weight: 0.2, 
+              weight: 0.2,
             })}
             onEachFeature={(feature, layer) => {
-              const formatNumber = (val, decimals = 1) => 
-                typeof val === 'number' ? val.toFixed(decimals) : (val || '0');
+              const formatNumber = (val, decimals = 1) =>
+                typeof val === "number"
+                  ? val.toFixed(decimals)
+                  : val || "0";
 
               layer.bindPopup(`
-                <div style="font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.6; color: #f8fafc; background: #0f172a; padding: 4px; border-radius: 8px; min-width: 180px;">
-                  <div style="font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 4px;">
+                <div style="font-family: system-ui, -apple-system, sans-serif; font-size: 12px; line-height: 1.6; color: #f8fafc; background: #0f172a; padding: 8px 12px; border-radius: 8px; min-width: 180px;">
+                  <div style="font-size: 13px; font-weight: 600; color: #38bdf8; margin-bottom: 6px; border-bottom: 1px solid #334155; padding-bottom: 4px;">
                     🌍 Wind Erosion Details
                   </div>
                   <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                     <span style="color: #94a3b8;">Risk:</span> 
-                    <span style="color: ${feature.properties.risk > 70 ? '#ef4444' : feature.properties.risk > 30 ? '#f59e0b' : '#10b981'}; font-weight: bold;">
+                    <span style="color: ${
+                      feature.properties.risk > 70
+                        ? "#ef4444"
+                        : feature.properties.risk > 30
+                        ? "#f59e0b"
+                        : "#10b981"
+                    }; font-weight: bold;">
                       ${formatNumber(feature.properties.risk, 1)}%
                     </span>
                   </div>
