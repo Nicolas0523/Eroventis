@@ -177,7 +177,7 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       >
         <TileLayer
           attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url="https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_3twd_1_507927c60b9eda9645dcdb95"
         />
 
         <FeatureGroup>
