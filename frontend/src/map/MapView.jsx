@@ -183,10 +183,10 @@ export default function MapView({ analysis, setPolygon, mapRef }) {
       >
         {/* Рабочая рабочая тёмная подложка от CARTO Dark Matter без API ключей */}
         <TileLayer
-          attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={19}
+          url="https://basemaps.cartocdn.com/rastertiles/dark_matter_gl_/{z}/{x}/{y}.png?key=cb1_3twd_1_507927c60b9eda9645dcdb95"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          subdomains={["a", "b", "c", "d"]}
+          maxZoom={ 19}
         />
 
         <FeatureGroup>
