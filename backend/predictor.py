@@ -4,7 +4,7 @@ from datetime import datetime
 from scipy.ndimage import gaussian_filter
 
 from config import ml_model, AAI_REFERENCE
-from data_loader import load_raw_data, load_raw_data_multi_year
+from data_loader import load_raw_data_multi_year
 from extract_features import (
     extract_features, 
     extract_features_grid, 

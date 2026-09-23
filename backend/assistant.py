@@ -10,7 +10,7 @@ env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 
-MODEL = "openai/gpt-oss-20b"
+MODEL = "llama-3.3-70b-versatile"
 
 
 api_key = os.getenv("GROQ_API_KEY")
